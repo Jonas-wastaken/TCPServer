@@ -2,6 +2,8 @@ package com.server.tcpserver;
 
 import java.io.*;
 import java.net.Socket;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public class ClientHandler implements Runnable {
 
@@ -13,30 +15,30 @@ public class ClientHandler implements Runnable {
 
     @Override
     public void run() {
+        // Create a Logger
+        Logger logger = Logger.getLogger(
+                ClientHandler.class.getName());
+
         try (
                 BufferedReader in = new BufferedReader(
                         new InputStreamReader(clientSocket.getInputStream()));
                 BufferedWriter out = new BufferedWriter(
-                        new OutputStreamWriter(clientSocket.getOutputStream()))
-        ) {
+                        new OutputStreamWriter(clientSocket.getOutputStream()))) {
             String receivedLine;
 
             while ((receivedLine = in.readLine()) != null) {
-                System.out.println("Received from " +
-                        clientSocket.getRemoteSocketAddress() +
-                        ": " + receivedLine);
 
-                // If client says “quit”, we break out and close
-                if (receivedLine.trim().equalsIgnoreCase("quit")) {
+                // Client can end connection with ".quit" command
+                if (receivedLine.trim().equalsIgnoreCase(".quit")) {
                     out.write("Goodbye!");
                     out.newLine();
                     out.flush();
-                    System.out.println("Client requested to close connection: " +
+                    logger.log(Level.INFO, "Client requested to close connection: {0}",
                             clientSocket.getRemoteSocketAddress());
                     break;
                 }
 
-                // Otherwise, echo as before
+                // Echo client messages
                 String response = "Echo: " + receivedLine;
                 out.write(response);
                 out.newLine();
@@ -44,17 +46,15 @@ public class ClientHandler implements Runnable {
             }
 
         } catch (IOException e) {
-            System.err.println("Error communicating with client " +
-                    clientSocket.getRemoteSocketAddress());
+            logger.log(Level.SEVERE, "Error communicating with client: {0}", clientSocket.getRemoteSocketAddress());
             e.printStackTrace();
         } finally {
             // Closing the socket will also close its streams
             try {
                 clientSocket.close();
-                System.out.println("Connection closed: " +
-                        clientSocket.getRemoteSocketAddress());
+                logger.log(Level.INFO, "Connection closed: {0}", clientSocket.getRemoteSocketAddress());
             } catch (IOException e) {
-                System.err.println("Failed to close client socket");
+                logger.log(Level.SEVERE, "Failed to close client socket");
                 e.printStackTrace();
             }
         }
