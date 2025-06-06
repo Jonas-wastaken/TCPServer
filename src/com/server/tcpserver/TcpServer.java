@@ -10,6 +10,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -47,7 +48,8 @@ public class TcpServer {
   private static volatile boolean running = true;
 
   // ServerSocket instance
-  private static volatile ServerSocket serverSocket = null;
+  private static final AtomicReference<ServerSocket> serverSocket =
+    new AtomicReference<>(null);
 
   private static final Logger logger = Logger.getLogger(
     TcpServer.class.getName()
@@ -78,8 +80,8 @@ public class TcpServer {
     consoleWatcher.start();
 
     // Start the socket
-    try {
-      serverSocket = new ServerSocket(PORT);
+    try (ServerSocket sock = new ServerSocket(PORT)) {
+      serverSocket.set(sock);
       logger.log(Level.INFO, "Server listening on port {0}", PORT);
 
       while (running) {
@@ -91,14 +93,7 @@ public class TcpServer {
       // Signal shrinker to stop (in case it’s sleeping)
       shrinker.interrupt();
 
-      // Close the ServerSocket
-      if (serverSocket != null && !serverSocket.isClosed()) {
-        try {
-          serverSocket.close();
-        } catch (IOException e) {
-          logger.log(Level.SEVERE, "Failed to close ServerSocket", e);
-        }
-      }
+      // No need to close the ServerSocket here; try-with-resources handles it
 
       // Shut down the executor
       executor.shutdown();
@@ -132,7 +127,7 @@ public class TcpServer {
 
   private static void acceptClientConnections() {
     try {
-      Socket clientSocket = serverSocket.accept();
+      Socket clientSocket = serverSocket.get().accept();
       logger.log(
         Level.INFO,
         "New connection from {0}",
@@ -228,17 +223,7 @@ public class TcpServer {
           shrinker.interrupt();
 
           // Close the ServerSocket to unblock accept()
-          if (serverSocket != null && !serverSocket.isClosed()) {
-            try {
-              serverSocket.close();
-            } catch (IOException e) {
-              logger.log(
-                Level.SEVERE,
-                "Error closing ServerSocket in watcher",
-                e
-              );
-            }
-          }
+          closeServerSocketInWatcher();
           break;
         } else {
           logger.log(
@@ -254,6 +239,16 @@ public class TcpServer {
         "Error reading from console. Server will not shut down via console watcher.",
         e
       );
+    }
+  }
+
+  private static void closeServerSocketInWatcher() {
+    if (serverSocket.get() != null && !serverSocket.get().isClosed()) {
+      try {
+        serverSocket.get().close();
+      } catch (IOException e) {
+        logger.log(Level.SEVERE, "Error closing ServerSocket in watcher", e);
+      }
     }
   }
 }
