@@ -69,30 +69,7 @@ public class TcpServer {
       logger.log(Level.INFO, "Server listening on port {0}", PORT);
 
       while (running) {
-        try {
-          Socket clientSocket = serverSocket.accept();
-          logger.log(
-            Level.INFO,
-            "New connection from {0}",
-            clientSocket.getRemoteSocketAddress()
-          );
-
-          executor.execute(new ClientHandler(clientSocket));
-
-          startThread();
-
-        } catch (SocketException se) {
-          // If the ServerSocket is closed from the watcher thread, accept() will throw.
-          if (running) {
-            // Unexpected SocketException (e.g. port forcibly closed). Log and break.
-            logger.log(
-              Level.SEVERE,
-              "SocketException in accept(): {0}",
-              se.getMessage()
-            );
-          }
-          break;
-        }
+        acceptClientConnections(logger);
       }
     } catch (IOException e) {
       logger.log(Level.SEVERE, "Error starting server on port " + PORT, e);
@@ -138,6 +115,32 @@ public class TcpServer {
       logger.log(Level.INFO, "Server has shut down gracefully.");
     }
   }
+
+  private static void acceptClientConnections (Logger logger) {
+    try {
+      Socket clientSocket = serverSocket.accept();
+      logger.log(
+          Level.INFO,
+          "New connection from {0}",
+          clientSocket.getRemoteSocketAddress());
+
+      executor.execute(new ClientHandler(clientSocket));
+
+      startThread();
+
+    } catch (SocketException se) {
+      // If the ServerSocket is closed from the watcher thread, accept() will throw.
+      if (running) {
+        // Unexpected SocketException (e.g. port forcibly closed). Log and return.
+        logger.log(
+            Level.SEVERE,
+            "SocketException in accept(): {0}",
+            se.getMessage());
+      }
+    } catch (IOException e) {
+      logger.log(Level.SEVERE, "I/O error while accepting connection", e);
+    }
+  }  
 
   /**
    * Service that checks if idle threads can be killed.
