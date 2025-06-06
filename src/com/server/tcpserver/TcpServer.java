@@ -49,17 +49,19 @@ public class TcpServer {
   // ServerSocket instance
   private static volatile ServerSocket serverSocket = null;
 
-  private static final Logger logger = Logger.getLogger(TcpServer.class.getName());
+  private static final Logger logger = Logger.getLogger(
+    TcpServer.class.getName()
+  );
 
   // PoolShrinkerThread
   private static final Thread shrinker = new Thread(
-      () -> shrinkThreadPool(),
-      "PoolShrinkerThread"
-    );
+    () -> shrinkThreadPool(),
+    "PoolShrinkerThread"
+  );
 
   // ShutdownWatcherThread
   private static final Thread consoleWatcher = new Thread(
-    () -> watchShutdown(shrinker),
+    () -> watchShutdown(),
     "ShutdownWatcherThread"
   );
 
@@ -207,7 +209,7 @@ public class TcpServer {
    * Once detected, it will close the ServerSocket (causing accept() to throw),
    * set running = false so the main loop exits, and interrupts the shrinker.
    */
-  private static void watchShutdown(Thread shrinker) {
+  private static void watchShutdown() {
     try (
       BufferedReader consoleIn = new BufferedReader(
         new InputStreamReader(System.in)
