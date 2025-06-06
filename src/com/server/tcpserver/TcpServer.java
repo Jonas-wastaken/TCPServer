@@ -56,7 +56,7 @@ public class TcpServer {
     executor.prestartAllCoreThreads();
 
     // Launch a shrinker thread
-    Thread shrinker = new Thread(() -> threadShrinkerService(), "PoolShrinkerThread");
+    Thread shrinker = new Thread(() -> shrinkThreadPool(), "PoolShrinkerThread");
     shrinker.setDaemon(true);
     shrinker.start();
 
@@ -79,17 +79,8 @@ public class TcpServer {
 
           executor.execute(new ClientHandler(clientSocket));
 
-          // Recompute desired core = active + BUFFER_SIZE, capped at maximumPoolSize.
-          int currentActive = executor.getActiveCount();
-          int desiredCore = currentActive + BUFFER_SIZE;
-          if (desiredCore > executor.getMaximumPoolSize()) {
-            desiredCore = executor.getMaximumPoolSize();
-          }
-          // Increase corePoolSize if needed to maintain BUFFER_SIZE idle threads
-          if (desiredCore > executor.getCorePoolSize()) {
-            executor.setCorePoolSize(desiredCore);
-            executor.prestartAllCoreThreads();
-          }
+          startThread();
+
         } catch (SocketException se) {
           // If the ServerSocket is closed from the watcher thread, accept() will throw.
           if (running) {
@@ -154,7 +145,7 @@ public class TcpServer {
    * Checks if the current threadPoolExecutor has > BUFFER_SIZE threads available.
    * Let's idle threads > BUFFER_SIZE time out.
    */
-  private static void threadShrinkerService() {
+  private static void shrinkThreadPool() {
     while (running) {
       try {
         Thread.sleep(10_000);
@@ -174,6 +165,23 @@ public class TcpServer {
       } catch (InterruptedException e) {
         break;
       }
+    }
+  }
+
+  /**
+   * Starts a new thread when client connects.
+   */
+  private static void startThread() {
+    // Recompute desired core = active + BUFFER_SIZE, capped at maximumPoolSize.
+    int currentActive = executor.getActiveCount();
+    int desiredCore = currentActive + BUFFER_SIZE;
+    if (desiredCore > executor.getMaximumPoolSize()) {
+      desiredCore = executor.getMaximumPoolSize();
+    }
+    // Increase corePoolSize if needed to maintain BUFFER_SIZE idle threads
+    if (desiredCore > executor.getCorePoolSize()) {
+      executor.setCorePoolSize(desiredCore);
+      executor.prestartAllCoreThreads();
     }
   }
 
