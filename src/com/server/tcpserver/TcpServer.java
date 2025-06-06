@@ -49,19 +49,31 @@ public class TcpServer {
   // ServerSocket instance
   private static volatile ServerSocket serverSocket = null;
 
-  public static void main(String[] args) {
-    Logger logger = Logger.getLogger(TcpServer.class.getName());
+  private static final Logger logger = Logger.getLogger(TcpServer.class.getName());
 
+  // PoolShrinkerThread
+  private static final Thread shrinker = new Thread(
+      () -> shrinkThreadPool(),
+      "PoolShrinkerThread"
+    );
+
+  // ShutdownWatcherThread
+  private static final Thread consoleWatcher = new Thread(
+    () -> watchShutdown(shrinker),
+    "ShutdownWatcherThread"
+  );
+
+  public static void main(String[] args) {
     // Prestart BUFFER_SIZE core threads
     executor.prestartAllCoreThreads();
 
-    // Launch a shrinker thread
-    Thread shrinker = new Thread(() -> shrinkThreadPool(), "PoolShrinkerThread");
+    // Launch PoolShrinkerThread
     shrinker.setDaemon(true);
     shrinker.start();
 
-    // Shutdown watcher
-    startConsoleWatcher(logger, shrinker);
+    // Launch ShutdownWatcherThread
+    consoleWatcher.setDaemon(true);
+    consoleWatcher.start();
 
     // Start the socket
     try {
@@ -69,7 +81,7 @@ public class TcpServer {
       logger.log(Level.INFO, "Server listening on port {0}", PORT);
 
       while (running) {
-        acceptClientConnections(logger);
+        acceptClientConnections();
       }
     } catch (IOException e) {
       logger.log(Level.SEVERE, "Error starting server on port " + PORT, e);
@@ -116,31 +128,32 @@ public class TcpServer {
     }
   }
 
-  private static void acceptClientConnections (Logger logger) {
+  private static void acceptClientConnections() {
     try {
       Socket clientSocket = serverSocket.accept();
       logger.log(
-          Level.INFO,
-          "New connection from {0}",
-          clientSocket.getRemoteSocketAddress());
+        Level.INFO,
+        "New connection from {0}",
+        clientSocket.getRemoteSocketAddress()
+      );
 
       executor.execute(new ClientHandler(clientSocket));
 
       startThread();
-
     } catch (SocketException se) {
       // If the ServerSocket is closed from the watcher thread, accept() will throw.
       if (running) {
         // Unexpected SocketException (e.g. port forcibly closed). Log and return.
         logger.log(
-            Level.SEVERE,
-            "SocketException in accept(): {0}",
-            se.getMessage());
+          Level.SEVERE,
+          "SocketException in accept(): {0}",
+          se.getMessage()
+        );
       }
     } catch (IOException e) {
       logger.log(Level.SEVERE, "I/O error while accepting connection", e);
     }
-  }  
+  }
 
   /**
    * Service that checks if idle threads can be killed.
@@ -194,59 +207,51 @@ public class TcpServer {
    * Once detected, it will close the ServerSocket (causing accept() to throw),
    * set running = false so the main loop exits, and interrupts the shrinker.
    */
-  private static void startConsoleWatcher(Logger logger, Thread shrinker) {
-    Thread consoleThread = new Thread(
-      () -> {
-        try (
-          BufferedReader consoleIn = new BufferedReader(
-            new InputStreamReader(System.in)
-          )
-        ) {
-          String line;
-          while ((line = consoleIn.readLine()) != null) {
-            if (line.trim().equalsIgnoreCase("shutdown")) {
-              logger.log(
-                Level.INFO,
-                "\"shutdown\" command received. Initiating graceful shutdown..."
-              );
-              running = false;
+  private static void watchShutdown(Thread shrinker) {
+    try (
+      BufferedReader consoleIn = new BufferedReader(
+        new InputStreamReader(System.in)
+      )
+    ) {
+      String line;
+      while ((line = consoleIn.readLine()) != null) {
+        if (line.trim().equalsIgnoreCase("shutdown")) {
+          logger.log(
+            Level.INFO,
+            "\"shutdown\" command received. Initiating graceful shutdown..."
+          );
+          running = false;
 
-              // Interrupt the shrinker so it can exit promptly
-              shrinker.interrupt();
+          // Interrupt the shrinker so it can exit promptly
+          shrinker.interrupt();
 
-              // Close the ServerSocket to unblock accept()
-              if (serverSocket != null && !serverSocket.isClosed()) {
-                try {
-                  serverSocket.close();
-                } catch (IOException e) {
-                  logger.log(
-                    Level.SEVERE,
-                    "Error closing ServerSocket in watcher",
-                    e
-                  );
-                }
-              }
-              break;
-            } else {
+          // Close the ServerSocket to unblock accept()
+          if (serverSocket != null && !serverSocket.isClosed()) {
+            try {
+              serverSocket.close();
+            } catch (IOException e) {
               logger.log(
-                Level.INFO,
-                "Unrecognized console command: \"{0}\". Type \"shutdown\" to stop the server.",
-                line
+                Level.SEVERE,
+                "Error closing ServerSocket in watcher",
+                e
               );
             }
           }
-        } catch (IOException e) {
+          break;
+        } else {
           logger.log(
-            Level.SEVERE,
-            "Error reading from console. Server will not shut down via console watcher.",
-            e
+            Level.INFO,
+            "Unrecognized console command: \"{0}\". Type \"shutdown\" to stop the server.",
+            line
           );
         }
-      },
-      "ConsoleWatcherThread"
-    );
-
-    consoleThread.setDaemon(true);
-    consoleThread.start();
+      }
+    } catch (IOException e) {
+      logger.log(
+        Level.SEVERE,
+        "Error reading from console. Server will not shut down via console watcher.",
+        e
+      );
+    }
   }
 }
