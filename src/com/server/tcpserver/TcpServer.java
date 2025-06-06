@@ -162,7 +162,8 @@ public class TcpServer {
         if (desiredCore < executor.getCorePoolSize()) {
           executor.setCorePoolSize(desiredCore);
         }
-      } catch (InterruptedException e) {
+      } catch (InterruptedException _) {
+        Thread.currentThread().interrupt();
         break;
       }
     }
