@@ -6,10 +6,10 @@ import java.io.InputStreamReader;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketException;
+import java.util.concurrent.Executors;
 import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.Executors;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -23,178 +23,218 @@ import java.util.logging.Logger;
  */
 public class TcpServer {
 
-    // Port the server listens on
-    private static final int PORT = 12345;
+  // Port the server listens on
+  private static final int PORT = 12345;
 
-    // How many idle threads we always want waiting (the “buffer”)
-    private static final int BUFFER_SIZE = 3;
+  // Warm Thread Pool
+  private static final int BUFFER_SIZE = 3;
 
-    // Estimate of the maximum number of concurrent clients you expect.
-    // Adjust this value as needed for your workload. The pool’s maximumPoolSize
-    // will be (MAX_EXPECTED_CONCURRENT + BUFFER_SIZE).
-    private static final int MAX_POOL_SIZE = 10;
+  // Maximum amount of client connections
+  private static final int MAX_POOL_SIZE = 10;
 
-    // The ThreadPoolExecutor that manages ClientHandler threads
-    private static final ThreadPoolExecutor executor = new ThreadPoolExecutor(BUFFER_SIZE, MAX_POOL_SIZE, 30L,
-            TimeUnit.SECONDS, new SynchronousQueue<>(), Executors.defaultThreadFactory(),
-            new ThreadPoolExecutor.AbortPolicy());
+  // The ThreadPoolExecutor that manages ClientHandler threads
+  private static final ThreadPoolExecutor executor = new ThreadPoolExecutor(
+    BUFFER_SIZE,
+    MAX_POOL_SIZE,
+    30L,
+    TimeUnit.SECONDS,
+    new SynchronousQueue<>(),
+    Executors.defaultThreadFactory(),
+    new ThreadPoolExecutor.AbortPolicy()
+  );
 
-    // Flag indicating whether the server is still running
-    private static volatile boolean running = true;
+  // Flag indicating whether the server is still running
+  private static volatile boolean running = true;
 
-    // Move ServerSocket to a static field so the watcher can close it
-    private static volatile ServerSocket serverSocket = null;
+  // ServerSocket instance
+  private static volatile ServerSocket serverSocket = null;
 
-    public static void main(String[] args) {
-        Logger logger = Logger.getLogger(TcpServer.class.getName());
+  public static void main(String[] args) {
+    Logger logger = Logger.getLogger(TcpServer.class.getName());
 
-        // 1. Prestart BUFFER_SIZE core threads so they exist and are idle immediately
-        executor.prestartAllCoreThreads();
+    // Prestart BUFFER_SIZE core threads
+    executor.prestartAllCoreThreads();
 
-        // 2. Launch a shrinker thread that periodically reduces corePoolSize
-        Thread shrinker = new Thread(() -> {
-            while (running) {
-                try {
-                    Thread.sleep(10_000); // every 10 seconds
-                    int nowActive = executor.getActiveCount();
-                    // Desired core = max(BUFFER_SIZE, active + BUFFER_SIZE), but don't exceed
-                    // maximum
-                    int desiredCore = nowActive + BUFFER_SIZE;
-                    if (desiredCore < BUFFER_SIZE) {
-                        desiredCore = BUFFER_SIZE;
-                    }
-                    if (desiredCore > executor.getMaximumPoolSize()) {
-                        desiredCore = executor.getMaximumPoolSize();
-                    }
-                    // Shrink corePoolSize if we have more cores than needed
-                    if (desiredCore < executor.getCorePoolSize()) {
-                        executor.setCorePoolSize(desiredCore);
-                    }
-                    // Note: threads above new core will time out after keepAlive
-                } catch (InterruptedException e) {
-                    // Exit if interrupted
-                    break;
-                }
-            }
-        }, "PoolShrinkerThread");
-        shrinker.setDaemon(true);
-        shrinker.start();
+    // Launch a shrinker thread
+    Thread shrinker = new Thread(() -> threadShrinkerService(), "PoolShrinkerThread");
+    shrinker.setDaemon(true);
+    shrinker.start();
 
-        // 3. Start a separate thread that watches System.in for the "shutdown" command
-        startConsoleWatcher(logger, shrinker);
+    // Shutdown watcher
+    startConsoleWatcher(logger, shrinker);
 
+    // Start the socket
+    try {
+      serverSocket = new ServerSocket(PORT);
+      logger.log(Level.INFO, "Server listening on port {0}", PORT);
+
+      while (running) {
         try {
-            serverSocket = new ServerSocket(PORT);
-            logger.log(Level.INFO, "Server listening on port {0}", PORT);
+          Socket clientSocket = serverSocket.accept();
+          logger.log(
+            Level.INFO,
+            "New connection from {0}",
+            clientSocket.getRemoteSocketAddress()
+          );
 
-            while (running) {
-                try {
-                    // This will block until a client connects—or until serverSocket is closed.
-                    Socket clientSocket = serverSocket.accept();
-                    logger.log(Level.INFO, "New connection from {0}", clientSocket.getRemoteSocketAddress());
+          executor.execute(new ClientHandler(clientSocket));
 
-                    // Submit a new ClientHandler to the executor. Because corePoolSize >=
-                    // BUFFER_SIZE,
-                    // there are always BUFFER_SIZE idle threads waiting on the
-                    // SynchronousQueue.take().
-                    executor.execute(new ClientHandler(clientSocket));
-
-                    // After submission, one of the buffered threads is now active.
-                    // Recompute desired core = active + BUFFER_SIZE, capped at maximumPoolSize.
-                    int currentActive = executor.getActiveCount();
-                    int desiredCore = currentActive + BUFFER_SIZE;
-                    if (desiredCore > executor.getMaximumPoolSize()) {
-                        desiredCore = executor.getMaximumPoolSize();
-                    }
-                    // Increase corePoolSize if needed to maintain BUFFER_SIZE idle threads
-                    if (desiredCore > executor.getCorePoolSize()) {
-                        executor.setCorePoolSize(desiredCore);
-                        // Prestart any newly added core threads so idle count = BUFFER_SIZE
-                        executor.prestartAllCoreThreads();
-                    }
-
-                } catch (SocketException se) {
-                    // If the ServerSocket is closed from the watcher thread, accept() will throw.
-                    if (running) {
-                        // Unexpected SocketException (e.g. port forcibly closed). Log and break.
-                        logger.log(Level.SEVERE, "SocketException in accept(): {0}", se.getMessage());
-                    }
-                    break;
-                }
-            }
-        } catch (IOException e) {
-            logger.log(Level.SEVERE, "Error starting server on port " + PORT, e);
-        } finally {
-            // Signal shrinker to stop (in case it’s sleeping)
-            shrinker.interrupt();
-
-            // 1. Close the ServerSocket if it’s not already closed
-            if (serverSocket != null && !serverSocket.isClosed()) {
-                try {
-                    serverSocket.close();
-                } catch (IOException e) {
-                    logger.log(Level.SEVERE, "Failed to close ServerSocket", e);
-                }
-            }
-
-            // 2. Shut down the executor so it stops accepting new handler tasks
-            executor.shutdown();
-            logger.log(Level.INFO, "Executor shutdown initiated. Waiting for active handlers to finish...");
-
-            // 3. Wait for all handlers to finish (up to a timeout)
-            try {
-                if (!executor.awaitTermination(60, TimeUnit.SECONDS)) {
-                    logger.log(Level.WARNING, "Not all handlers terminated within 60 seconds. Forcing shutdown...");
-                    executor.shutdownNow();
-                }
-            } catch (InterruptedException ie) {
-                logger.log(Level.SEVERE, "Interrupted while waiting for handler threads to terminate", ie);
-                executor.shutdownNow();
-                Thread.currentThread().interrupt();
-            }
-
-            logger.log(Level.INFO, "Server has shut down gracefully.");
+          // Recompute desired core = active + BUFFER_SIZE, capped at maximumPoolSize.
+          int currentActive = executor.getActiveCount();
+          int desiredCore = currentActive + BUFFER_SIZE;
+          if (desiredCore > executor.getMaximumPoolSize()) {
+            desiredCore = executor.getMaximumPoolSize();
+          }
+          // Increase corePoolSize if needed to maintain BUFFER_SIZE idle threads
+          if (desiredCore > executor.getCorePoolSize()) {
+            executor.setCorePoolSize(desiredCore);
+            executor.prestartAllCoreThreads();
+          }
+        } catch (SocketException se) {
+          // If the ServerSocket is closed from the watcher thread, accept() will throw.
+          if (running) {
+            // Unexpected SocketException (e.g. port forcibly closed). Log and break.
+            logger.log(
+              Level.SEVERE,
+              "SocketException in accept(): {0}",
+              se.getMessage()
+            );
+          }
+          break;
         }
+      }
+    } catch (IOException e) {
+      logger.log(Level.SEVERE, "Error starting server on port " + PORT, e);
+    } finally {
+      // Signal shrinker to stop (in case it’s sleeping)
+      shrinker.interrupt();
+
+      // Close the ServerSocket
+      if (serverSocket != null && !serverSocket.isClosed()) {
+        try {
+          serverSocket.close();
+        } catch (IOException e) {
+          logger.log(Level.SEVERE, "Failed to close ServerSocket", e);
+        }
+      }
+
+      // Shut down the executor
+      executor.shutdown();
+      logger.log(
+        Level.INFO,
+        "Executor shutdown initiated. Waiting for active handlers to finish..."
+      );
+
+      // Wait for all handlers to finish (up to a timeout)
+      try {
+        if (!executor.awaitTermination(30, TimeUnit.SECONDS)) {
+          logger.log(
+            Level.WARNING,
+            "Not all handlers terminated within 30 seconds. Forcing shutdown..."
+          );
+          executor.shutdownNow();
+        }
+      } catch (InterruptedException ie) {
+        logger.log(
+          Level.SEVERE,
+          "Interrupted while waiting for handler threads to terminate",
+          ie
+        );
+        executor.shutdownNow();
+        Thread.currentThread().interrupt();
+      }
+
+      logger.log(Level.INFO, "Server has shut down gracefully.");
     }
+  }
 
-    /**
-     * Launches a thread that listens on System.in for the exact word "shutdown".
-     * Once detected, it will close the ServerSocket (causing accept() to throw),
-     * set running = false so the main loop exits, and interrupt the shrinker.
-     */
-    private static void startConsoleWatcher(Logger logger, Thread shrinker) {
-        Thread consoleThread = new Thread(() -> {
-            try (BufferedReader consoleIn = new BufferedReader(new InputStreamReader(System.in))) {
-                String line;
-                while ((line = consoleIn.readLine()) != null) {
-                    if (line.trim().equalsIgnoreCase("shutdown")) {
-                        logger.log(Level.INFO, "\"shutdown\" command received. Initiating graceful shutdown...");
-                        running = false;
+  /**
+   * Service that checks if idle threads can be killed.
+   * Calculates currently desired pool size. -> Can not exceed MAX_POOL_SIZE
+   * Checks if the current threadPoolExecutor has > BUFFER_SIZE threads available.
+   * Let's idle threads > BUFFER_SIZE time out.
+   */
+  private static void threadShrinkerService() {
+    while (running) {
+      try {
+        Thread.sleep(10_000);
+        // Desired core = max(BUFFER_SIZE, active + BUFFER_SIZE), but don't exceed
+        // maximum
+        int desiredCore = executor.getActiveCount() + BUFFER_SIZE;
+        if (desiredCore < BUFFER_SIZE) {
+          desiredCore = BUFFER_SIZE;
+        }
+        if (desiredCore > executor.getMaximumPoolSize()) {
+          desiredCore = executor.getMaximumPoolSize();
+        }
+        // Shrink corePoolSize
+        if (desiredCore < executor.getCorePoolSize()) {
+          executor.setCorePoolSize(desiredCore);
+        }
+      } catch (InterruptedException e) {
+        break;
+      }
+    }
+  }
 
-                        // Interrupt the shrinker so it can exit promptly
-                        shrinker.interrupt();
+  /**
+   * Launches a thread that listens on System.in for shutdown command.
+   * Once detected, it will close the ServerSocket (causing accept() to throw),
+   * set running = false so the main loop exits, and interrupts the shrinker.
+   */
+  private static void startConsoleWatcher(Logger logger, Thread shrinker) {
+    Thread consoleThread = new Thread(
+      () -> {
+        try (
+          BufferedReader consoleIn = new BufferedReader(
+            new InputStreamReader(System.in)
+          )
+        ) {
+          String line;
+          while ((line = consoleIn.readLine()) != null) {
+            if (line.trim().equalsIgnoreCase("shutdown")) {
+              logger.log(
+                Level.INFO,
+                "\"shutdown\" command received. Initiating graceful shutdown..."
+              );
+              running = false;
 
-                        // Close the ServerSocket to unblock accept()
-                        if (serverSocket != null && !serverSocket.isClosed()) {
-                            try {
-                                serverSocket.close();
-                            } catch (IOException e) {
-                                logger.log(Level.SEVERE, "Error closing ServerSocket in watcher", e);
-                            }
-                        }
-                        break;
-                    } else {
-                        logger.log(Level.INFO,
-                                "Unrecognized console command: \"{0}\". Type \"shutdown\" to stop the server.", line);
-                    }
+              // Interrupt the shrinker so it can exit promptly
+              shrinker.interrupt();
+
+              // Close the ServerSocket to unblock accept()
+              if (serverSocket != null && !serverSocket.isClosed()) {
+                try {
+                  serverSocket.close();
+                } catch (IOException e) {
+                  logger.log(
+                    Level.SEVERE,
+                    "Error closing ServerSocket in watcher",
+                    e
+                  );
                 }
-            } catch (IOException e) {
-                logger.log(Level.SEVERE, "Error reading from console. Server will not shut down via console watcher.",
-                        e);
+              }
+              break;
+            } else {
+              logger.log(
+                Level.INFO,
+                "Unrecognized console command: \"{0}\". Type \"shutdown\" to stop the server.",
+                line
+              );
             }
-        }, "ConsoleWatcherThread");
+          }
+        } catch (IOException e) {
+          logger.log(
+            Level.SEVERE,
+            "Error reading from console. Server will not shut down via console watcher.",
+            e
+          );
+        }
+      },
+      "ConsoleWatcherThread"
+    );
 
-        consoleThread.setDaemon(true);
-        consoleThread.start();
-    }
+    consoleThread.setDaemon(true);
+    consoleThread.start();
+  }
 }
