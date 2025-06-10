@@ -29,7 +29,7 @@ public class Server {
     private final Logger logger = Logger.getLogger(Server.class.getName());
     private volatile boolean running = true;
     private Thread shrinker;
-    
+
     /**
      * Constructs a new Server with the specified configuration.
      *
@@ -109,7 +109,7 @@ public class Server {
                 if (desiredCore < executor.getCorePoolSize()) {
                     executor.setCorePoolSize(desiredCore);
                 }
-            } catch (InterruptedException _) {
+            } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 break;
             }
@@ -187,7 +187,7 @@ public class Server {
             }
         } catch (InterruptedException ie) {
             logger.log(Level.SEVERE, "Interrupted while waiting for handler threads to terminate", ie);
-            if (executor != null) executor.shutdownNow();
+            executor.shutdownNow();
             Thread.currentThread().interrupt();
         }
         logger.log(Level.INFO, "Server has shut down gracefully.");
