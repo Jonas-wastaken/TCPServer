@@ -34,9 +34,9 @@ import org.json.JSONObject;
 public class Server {
 
   // Configuration values (initialized in main)
-  private static int PORT;
-  private static int BUFFER_SIZE;
-  private static int MAX_POOL_SIZE;
+  private static int port;
+  private static int bufferSize;
+  private static int maxPoolSize;
 
   // The ThreadPoolExecutor that manages ClientHandler threads (initialized in main)
   private static ThreadPoolExecutor executor;
@@ -74,9 +74,9 @@ public class Server {
         sb.append(line);
       }
       JSONObject json = new JSONObject(sb.toString());
-      PORT = json.getInt("port");
-      BUFFER_SIZE = json.getInt("buffer_size");
-      MAX_POOL_SIZE = json.getInt("max_pool_size");
+      port = json.getInt("port");
+      bufferSize = json.getInt("buffer_size");
+      maxPoolSize = json.getInt("max_pool_size");
     }
   }
 
@@ -96,8 +96,8 @@ public class Server {
     }
 
     executor = new ThreadPoolExecutor(
-      BUFFER_SIZE,
-      MAX_POOL_SIZE,
+      bufferSize,
+      maxPoolSize,
       30L,
       TimeUnit.SECONDS,
       new SynchronousQueue<>(),
@@ -105,7 +105,7 @@ public class Server {
       new ThreadPoolExecutor.AbortPolicy()
     );
 
-    // Prestart BUFFER_SIZE core threads
+    // Prestart bufferSize core threads
     executor.prestartAllCoreThreads();
 
     // Launch PoolShrinkerThread
@@ -119,15 +119,15 @@ public class Server {
     consoleWatcher.start();
 
     // Start the socket
-    try (ServerSocket sock = new ServerSocket(PORT)) {
+    try (ServerSocket sock = new ServerSocket(port)) {
       serverSocket.set(sock);
-      logger.log(Level.INFO, "Server listening on port {0}", PORT);
+      logger.log(Level.INFO, "Server listening on port {0}", port);
 
       while (running) {
         acceptClientConnections();
       }
     } catch (IOException e) {
-      logger.log(Level.SEVERE, String.format("Error starting server on port %d", PORT), e);
+      logger.log(Level.SEVERE, String.format("Error starting server on port %d", port), e);
     } finally {
       // Signal shrinker to stop (in case it’s sleeping)
       if (shrinker != null) shrinker.interrupt();
@@ -203,11 +203,11 @@ public class Server {
     while (running) {
       try {
         Thread.sleep(10_000);
-        // Desired core = max(BUFFER_SIZE, active + BUFFER_SIZE), but don't exceed
+        // Desired core = max(bufferSize, active + bufferSize), but don't exceed
         // maximum
-        int desiredCore = executor.getActiveCount() + BUFFER_SIZE;
-        if (desiredCore < BUFFER_SIZE) {
-          desiredCore = BUFFER_SIZE;
+        int desiredCore = executor.getActiveCount() + bufferSize;
+        if (desiredCore < bufferSize) {
+          desiredCore = bufferSize;
         }
         if (desiredCore > executor.getMaximumPoolSize()) {
           desiredCore = executor.getMaximumPoolSize();
@@ -229,13 +229,13 @@ public class Server {
    * Called when a new client connects.
    */
   private static void startThread() {
-    // Recompute desired core = active + BUFFER_SIZE, capped at maximumPoolSize.
+    // Recompute desired core = active + bufferSize, capped at maximumPoolSize.
     int currentActive = executor.getActiveCount();
-    int desiredCore = currentActive + BUFFER_SIZE;
+    int desiredCore = currentActive + bufferSize;
     if (desiredCore > executor.getMaximumPoolSize()) {
       desiredCore = executor.getMaximumPoolSize();
     }
-    // Increase corePoolSize if needed to maintain BUFFER_SIZE idle threads
+    // Increase corePoolSize if needed to maintain bufferSize idle threads
     if (desiredCore > executor.getCorePoolSize()) {
       executor.setCorePoolSize(desiredCore);
       executor.prestartAllCoreThreads();
