@@ -79,14 +79,16 @@ public class Server {
             logger.log(Level.INFO, "New connection from {0}", clientSocket.getRemoteSocketAddress());
             executor.execute(new ClientHandler(clientSocket));
             adjustThreadPool();
-        } catch (SocketException se) {
+          } catch (SocketException se) {
             if (running) {
-                logger.log(Level.SEVERE, "SocketException in accept(): {0}", se.getMessage());
+              logger.log(Level.SEVERE, "SocketException in accept(): {0}", se.getMessage());
             }
-        } catch (IOException e) {
+          } catch (IOException e) {
             logger.log(Level.SEVERE, "I/O error while accepting connection", e);
+          }
+          logger.log(Level.INFO, "Currently active connections: {0}", (executor.getActiveCount() -1)); //TODO: Sometimes works, sometimes not
+          logger.log(Level.INFO, "Current thread pool: {0}", executor.getPoolSize());
         }
-    }
 
     /**
      * Starts the background thread responsible for shrinking the thread pool.
@@ -111,6 +113,7 @@ public class Server {
                 }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
+                logger.log(Level.INFO, "Interrupted unused thread. Current thread pool: {0}", executor.getPoolSize());
                 break;
             }
         }
