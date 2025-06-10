@@ -93,8 +93,6 @@ public class TcpServer {
       // Signal shrinker to stop (in case it’s sleeping)
       shrinker.interrupt();
 
-      // No need to close the ServerSocket here; try-with-resources handles it
-
       // Shut down the executor
       executor.shutdown();
       logger.log(
