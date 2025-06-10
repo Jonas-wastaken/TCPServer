@@ -15,12 +15,19 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * A TCP server that listens on a port, spawns a new thread for every connected
- * client, and keeps a “buffer” of 3 idle handler‐threads at all times. When a
- * new
- * client connects, one of those 3 immediately picks up the task, and the pool
- * automatically spawns a new thread to bring the idle count back to 3. The pool
- * also shrinks itself (down to active+3) when load drops.
+ * A TCP server that listens on a specified port, manages client connections using a warm thread pool,
+ * and supports graceful shutdown via a console command. The server maintains a buffer of idle handler threads,
+ * automatically scales the thread pool based on load, and allows for dynamic shrinking of the pool.
+ * 
+ * <p>
+ * Features:
+ * <ul>
+ *   <li>Spawns a new thread for every connected client.</li>
+ *   <li>Keeps a buffer of idle handler threads for fast response to new connections.</li>
+ *   <li>Automatically grows and shrinks the thread pool based on active connections.</li>
+ *   <li>Supports graceful shutdown via a "shutdown" command on the console.</li>
+ * </ul>
+ * </p>
  */
 public class Server {
 
@@ -55,16 +62,21 @@ public class Server {
 
   // PoolShrinkerThread
   private static final Thread shrinker = new Thread(
-    () -> shrinkThreadPool(),
+    Server::shrinkThreadPool,
     "PoolShrinkerThread"
   );
 
   // ShutdownWatcherThread
   private static final Thread consoleWatcher = new Thread(
-    () -> watchShutdown(),
+    Server::watchShutdown,
     "ShutdownWatcherThread"
   );
 
+  /**
+   * The main entry point for the TCP server application.
+   * Initializes the thread pool, starts background service threads,
+   * and begins accepting client connections.
+   */
   public static void main(String[] args) {
     // Prestart BUFFER_SIZE core threads
     executor.prestartAllCoreThreads();
@@ -121,6 +133,11 @@ public class Server {
     }
   }
 
+  /**
+   * Accepts incoming client connections on the server socket.
+   * For each connection, logs the event and submits a new ClientHandler to the thread pool.
+   * Handles exceptions related to socket operations.
+   */
   private static void acceptClientConnections() {
     try {
       Socket clientSocket = serverSocket.get().accept();
@@ -149,10 +166,9 @@ public class Server {
   }
 
   /**
-   * Service that checks if idle threads can be killed.
-   * Calculates currently desired pool size. -> Can not exceed MAX_POOL_SIZE
-   * Checks if the current threadPoolExecutor has > BUFFER_SIZE threads available.
-   * Let's idle threads > BUFFER_SIZE time out.
+   * Service thread that periodically checks if idle threads in the pool can be reduced.
+   * Shrinks the core pool size to match the current load, maintaining a buffer of idle threads.
+   * Exits when the server is no longer running.
    */
   private static void shrinkThreadPool() {
     while (running) {
@@ -179,7 +195,9 @@ public class Server {
   }
 
   /**
-   * Starts a new thread when client connects.
+   * Adjusts the thread pool to ensure a buffer of idle threads is maintained.
+   * Increases the core pool size if needed and prestarts core threads.
+   * Called when a new client connects.
    */
   private static void startThread() {
     // Recompute desired core = active + BUFFER_SIZE, capped at maximumPoolSize.
@@ -196,9 +214,9 @@ public class Server {
   }
 
   /**
-   * Launches a thread that listens on System.in for shutdown command.
-   * Once detected, it will close the ServerSocket (causing accept() to throw),
-   * set running = false so the main loop exits, and interrupts the shrinker.
+   * Launches a watcher thread that listens for the "shutdown" command on System.in.
+   * When the command is received, initiates a graceful shutdown by closing the server socket,
+   * interrupting the pool shrinker, and setting the running flag to false.
    */
   private static void watchShutdown() {
     try (
@@ -238,6 +256,11 @@ public class Server {
     }
   }
 
+  /**
+   * Closes the ServerSocket instance if it is open.
+   * Used by the shutdown watcher to unblock the accept() call and allow the server to exit.
+   * Logs any IOException that occurs during closure.
+   */
   private static void closeServerSocketInWatcher() {
     if (serverSocket.get() != null && !serverSocket.get().isClosed()) {
       try {
