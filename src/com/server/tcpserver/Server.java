@@ -22,7 +22,7 @@ import java.util.logging.Logger;
  * automatically spawns a new thread to bring the idle count back to 3. The pool
  * also shrinks itself (down to active+3) when load drops.
  */
-public class TcpServer {
+public class Server {
 
   // Port the server listens on
   private static final int PORT = 12345;
@@ -51,9 +51,7 @@ public class TcpServer {
   private static final AtomicReference<ServerSocket> serverSocket =
     new AtomicReference<>(null);
 
-  private static final Logger logger = Logger.getLogger(
-    TcpServer.class.getName()
-  );
+  private static final Logger logger = Logger.getLogger(Server.class.getName());
 
   // PoolShrinkerThread
   private static final Thread shrinker = new Thread(
