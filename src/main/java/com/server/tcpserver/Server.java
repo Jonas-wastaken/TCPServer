@@ -3,6 +3,7 @@ package com.server.tcpserver;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.InputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketException;
@@ -13,6 +14,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import org.json.JSONObject;
 
 /**
  * A TCP server that listens on a specified port, manages client connections using a warm thread pool,
@@ -31,25 +33,13 @@ import java.util.logging.Logger;
  */
 public class Server {
 
-  // Port the server listens on
-  private static final int PORT = 12345;
+  // Configuration values (initialized in main)
+  private static int PORT;
+  private static int BUFFER_SIZE;
+  private static int MAX_POOL_SIZE;
 
-  // Warm Thread Pool
-  private static final int BUFFER_SIZE = 3;
-
-  // Maximum amount of client connections
-  private static final int MAX_POOL_SIZE = 10;
-
-  // The ThreadPoolExecutor that manages ClientHandler threads
-  private static final ThreadPoolExecutor executor = new ThreadPoolExecutor(
-    BUFFER_SIZE,
-    MAX_POOL_SIZE,
-    30L,
-    TimeUnit.SECONDS,
-    new SynchronousQueue<>(),
-    Executors.defaultThreadFactory(),
-    new ThreadPoolExecutor.AbortPolicy()
-  );
+  // The ThreadPoolExecutor that manages ClientHandler threads (initialized in main)
+  private static ThreadPoolExecutor executor;
 
   // Flag indicating whether the server is still running
   private static volatile boolean running = true;
@@ -61,31 +51,70 @@ public class Server {
   private static final Logger logger = Logger.getLogger(Server.class.getName());
 
   // PoolShrinkerThread
-  private static final Thread shrinker = new Thread(
-    Server::shrinkThreadPool,
-    "PoolShrinkerThread"
-  );
+  private static Thread shrinker;
 
   // ShutdownWatcherThread
-  private static final Thread consoleWatcher = new Thread(
-    Server::watchShutdown,
-    "ShutdownWatcherThread"
-  );
+  private static Thread consoleWatcher;
+
+  /**
+   * Loads server configuration from config.json in the classpath (src/main/resources).
+   * @throws IOException if the file cannot be read or parsed
+   */
+  private static void loadConfig() throws IOException {
+    try (
+      InputStream is = Server.class.getClassLoader().getResourceAsStream("config.json");
+      BufferedReader reader = new BufferedReader(new InputStreamReader(is))
+    ) {
+      if (is == null) {
+        throw new IOException("config.json not found in classpath");
+      }
+      StringBuilder sb = new StringBuilder();
+      String line;
+      while ((line = reader.readLine()) != null) {
+        sb.append(line);
+      }
+      JSONObject json = new JSONObject(sb.toString());
+      PORT = json.getInt("port");
+      BUFFER_SIZE = json.getInt("buffer_size");
+      MAX_POOL_SIZE = json.getInt("max_pool_size");
+    }
+  }
 
   /**
    * The main entry point for the TCP server application.
    * Initializes the thread pool, starts background service threads,
    * and begins accepting client connections.
+   *
+   * @param args command-line arguments (not used)
    */
   public static void main(String[] args) {
+    try {
+      loadConfig();
+    } catch (IOException e) {
+      logger.log(Level.SEVERE, "Failed to load config.json", e);
+      return;
+    }
+
+    executor = new ThreadPoolExecutor(
+      BUFFER_SIZE,
+      MAX_POOL_SIZE,
+      30L,
+      TimeUnit.SECONDS,
+      new SynchronousQueue<>(),
+      Executors.defaultThreadFactory(),
+      new ThreadPoolExecutor.AbortPolicy()
+    );
+
     // Prestart BUFFER_SIZE core threads
     executor.prestartAllCoreThreads();
 
     // Launch PoolShrinkerThread
+    shrinker = new Thread(Server::shrinkThreadPool, "PoolShrinkerThread");
     shrinker.setDaemon(true);
     shrinker.start();
 
     // Launch ShutdownWatcherThread
+    consoleWatcher = new Thread(Server::watchShutdown, "ShutdownWatcherThread");
     consoleWatcher.setDaemon(true);
     consoleWatcher.start();
 
@@ -98,13 +127,13 @@ public class Server {
         acceptClientConnections();
       }
     } catch (IOException e) {
-      logger.log(Level.SEVERE, "Error starting server on port " + PORT, e);
+      logger.log(Level.SEVERE, String.format("Error starting server on port %d", PORT), e);
     } finally {
       // Signal shrinker to stop (in case it’s sleeping)
-      shrinker.interrupt();
+      if (shrinker != null) shrinker.interrupt();
 
       // Shut down the executor
-      executor.shutdown();
+      if (executor != null) executor.shutdown();
       logger.log(
         Level.INFO,
         "Executor shutdown initiated. Waiting for active handlers to finish..."
@@ -112,7 +141,7 @@ public class Server {
 
       // Wait for all handlers to finish (up to a timeout)
       try {
-        if (!executor.awaitTermination(30, TimeUnit.SECONDS)) {
+        if (executor != null && !executor.awaitTermination(30, TimeUnit.SECONDS)) {
           logger.log(
             Level.WARNING,
             "Not all handlers terminated within 30 seconds. Forcing shutdown..."
@@ -125,7 +154,7 @@ public class Server {
           "Interrupted while waiting for handler threads to terminate",
           ie
         );
-        executor.shutdownNow();
+        if (executor != null) executor.shutdownNow();
         Thread.currentThread().interrupt();
       }
 
