@@ -1,5 +1,8 @@
 package com.server.tcpserver;
 
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpHandler;
+import com.sun.net.httpserver.HttpServer;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
@@ -33,6 +36,7 @@ public class Server {
   private Thread shrinker;
   private final AtomicInteger connectedClients = new AtomicInteger(0);
   private Thread monitorThread;
+  private HttpServer httpServer;
 
   /**
    * Constructs a new Server with the specified configuration.
@@ -60,6 +64,7 @@ public class Server {
     startPoolShrinker();
     startShutdownWatcher();
     startMonitorThread();
+    startRestMonitor();
 
     try (ServerSocket sock = new ServerSocket(config.getPort())) {
       serverSocket.set(sock);
@@ -216,9 +221,54 @@ public class Server {
   }
 
   /**
+   * Starts a simple REST endpoint for monitoring.
+   */
+  private void startRestMonitor() {
+    try {
+      httpServer = HttpServer.create(new java.net.InetSocketAddress(8081), 0);
+      httpServer.createContext("/monitor", new MonitorHandler());
+      httpServer.setExecutor(Executors.newSingleThreadExecutor());
+      httpServer.start();
+      logger.log(
+        Level.INFO,
+        "REST monitor endpoint started on http://localhost:8081/monitor"
+      );
+    } catch (IOException e) {
+      logger.log(Level.SEVERE, "Failed to start REST monitor endpoint", e);
+    }
+  }
+
+  /**
+   * Handler for the /monitor REST endpoint.
+   */
+  private class MonitorHandler implements HttpHandler {
+
+    @Override
+    public void handle(HttpExchange exchange) throws IOException {
+      if (!exchange.getRequestMethod().equalsIgnoreCase("GET")) {
+        exchange.sendResponseHeaders(405, -1); // Method Not Allowed
+        return;
+      }
+      JSONObject json = new JSONObject();
+      json.put("active_threads", executor.getActiveCount());
+      json.put("pool_size", executor.getPoolSize());
+      json.put("queue_size", executor.getQueue().size());
+      json.put("connected_clients", connectedClients.get());
+
+      byte[] response = json.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+      exchange.getResponseHeaders().set("Content-Type", "application/json");
+      exchange.sendResponseHeaders(200, response.length);
+      try (java.io.OutputStream os = exchange.getResponseBody()) {
+        os.write(response);
+      }
+    }
+  }
+
+  /**
    * Shuts down the server and thread pool gracefully.
    */
   private void shutdown() {
+    if (httpServer != null) httpServer.stop(0);
     if (monitorThread != null) monitorThread.interrupt();
     if (shrinker != null) shrinker.interrupt();
     if (executor != null) executor.shutdown();
