@@ -86,8 +86,6 @@ public class Server {
           } catch (IOException e) {
             logger.log(Level.SEVERE, "I/O error while accepting connection", e);
           }
-          logger.log(Level.INFO, "Currently active connections: {0}", (executor.getActiveCount() -1)); //TODO: Sometimes works, sometimes not
-          logger.log(Level.INFO, "Current thread pool: {0}", executor.getPoolSize());
         }
 
     /**
@@ -113,7 +111,6 @@ public class Server {
                 }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                logger.log(Level.INFO, "Interrupted unused thread. Current thread pool: {0}", executor.getPoolSize());
                 break;
             }
         }
