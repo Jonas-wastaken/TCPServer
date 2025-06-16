@@ -141,7 +141,7 @@ public class Server {
    * Adjusts the thread pool size based on the number of active connections.
    */
   private void adjustThreadPool() {
-    int currentActive = executor.getActiveCount();
+    int currentActive = connectedClients.get();
     int desiredCore = Math.min(
       currentActive + config.getBufferSize(),
       executor.getMaximumPoolSize()
