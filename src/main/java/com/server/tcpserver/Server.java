@@ -59,7 +59,7 @@ public class Server {
   public void start() {
     startPoolShrinker();
     startShutdownWatcher();
-    startMonitorThread(); // Add this line
+    startMonitorThread();
 
     try (ServerSocket sock = new ServerSocket(config.getPort())) {
       serverSocket.set(sock);
