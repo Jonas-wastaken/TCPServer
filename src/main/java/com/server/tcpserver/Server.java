@@ -93,6 +93,27 @@ public class Server {
     try {
       Socket clientSocket = serverSocket.get().accept();
 
+      // Check if the thread pool can accept a new client
+      int active = executor.getActiveCount();
+      int max = executor.getMaximumPoolSize();
+      // For SynchronousQueue, if all threads are busy, no new task can be accepted
+      if (active >= max) {
+        Logger.getLogger(Server.class.getName()).log(
+          Level.WARNING,
+          "Rejected connection from {0}: server is busy (no available threads)",
+          clientSocket.getRemoteSocketAddress()
+        );
+        try (BufferedWriter out = new BufferedWriter(
+          new OutputStreamWriter(clientSocket.getOutputStream()))
+        ) {
+          out.write("Server busy. Try again later.");
+          out.newLine();
+          out.flush();
+        } catch (IOException ignored) {}
+        clientSocket.close();
+        return;
+      }
+
       logger.log(
         Level.INFO,
         "New connection from {0}",
