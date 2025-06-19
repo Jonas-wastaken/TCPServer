@@ -2,6 +2,7 @@ package com.server.tcpserver;
 
 import java.io.*;
 import java.net.Socket;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -17,16 +18,18 @@ public class ClientHandler implements Runnable {
   private final Socket clientSocket;
   private final AtomicInteger connectedClients;
   private final int clientTimeout;
+  private final Set<Socket> activeClientSockets;
 
   /**
    * Constructs a new ClientHandler for the given client socket.
    *
    * @param socket the client socket
    */
-  public ClientHandler(Socket socket, AtomicInteger connectedClients, int clientTimeout) {
+  public ClientHandler(Socket socket, AtomicInteger connectedClients, int clientTimeout, Set<Socket> activeClientSockets) {
     this.clientSocket = socket;
     this.connectedClients = connectedClients;
     this.clientTimeout = clientTimeout;
+    this.activeClientSockets = activeClientSockets;
   }
 
   /**
@@ -34,6 +37,10 @@ public class ClientHandler implements Runnable {
    */
   @Override
   public void run() {
+    // Register this socket as active
+    if (activeClientSockets != null) {
+      activeClientSockets.add(clientSocket);
+    }
     // Notify client that they are now being served
     try {
       BufferedWriter out = new BufferedWriter(
@@ -87,6 +94,9 @@ public class ClientHandler implements Runnable {
       logger.log(Level.SEVERE, "Exception: ", e);
     } finally {
       closeClientSocket();
+      if (activeClientSockets != null) {
+        activeClientSockets.remove(clientSocket);
+      }
       if (connectedClients != null) {
         connectedClients.decrementAndGet();
       }

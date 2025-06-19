@@ -12,6 +12,8 @@ import java.io.OutputStreamWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketException;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -39,6 +41,7 @@ public class Server {
   private final AtomicInteger connectedClients = new AtomicInteger(0);
   private Thread monitorThread;
   private HttpServer httpServer;
+  private final Set<Socket> activeClientSockets = ConcurrentHashMap.newKeySet();
 
   /**
    * Constructs a new Server with the specified configuration.
@@ -111,8 +114,9 @@ public class Server {
         clientSocket.getRemoteSocketAddress()
       );
       connectedClients.incrementAndGet();
+      activeClientSockets.add(clientSocket);
       try {
-        executor.execute(new ClientHandler(clientSocket, connectedClients, config.getClientTimeout()));
+        executor.execute(new ClientHandler(clientSocket, connectedClients, config.getClientTimeout(), activeClientSockets));
         adjustThreadPool();
       } catch (java.util.concurrent.RejectedExecutionException ex) {
         Logger.getLogger(Server.class.getName()).log(
@@ -129,6 +133,7 @@ public class Server {
         } catch (IOException ignored) {}
         clientSocket.close();
         connectedClients.decrementAndGet();
+        activeClientSockets.remove(clientSocket);
       }
     } catch (SocketException se) {
       if (running) {
@@ -220,6 +225,18 @@ public class Server {
           running = false;
           shrinker.interrupt();
           closeServerSocket();
+
+          // Send shutdown warning to all clients
+          sendShutdownWarningToClients();
+
+          // Schedule forced disconnect after 60 seconds
+          new Thread(() -> {
+            try {
+              Thread.sleep(60_000);
+              forceCloseAllClients();
+            } catch (InterruptedException ignored) {}
+          }, "ForceDisconnectThread").start();
+
           break;
         } else {
           logger.log(
@@ -236,6 +253,34 @@ public class Server {
         e
       );
     }
+  }
+
+  /**
+   * Sends a shutdown warning message to all connected clients.
+   */
+  private void sendShutdownWarningToClients() {
+    logger.log(Level.INFO, "Sending shutdown warning to all connected clients...");
+    for (Socket socket : activeClientSockets) {
+      try {
+        BufferedWriter out = new BufferedWriter(
+          new OutputStreamWriter(socket.getOutputStream())
+        );
+        out.write("Server is shutting down in 60 seconds. Please disconnect.");
+        out.newLine();
+        out.flush();
+      } catch (IOException ignored) {}
+    }
+  }
+
+  private void forceCloseAllClients() {
+    logger.log(Level.INFO, "Forcefully closing all active client connections...");
+    for (Socket socket : activeClientSockets) {
+      try {
+        socket.close();
+      } catch (IOException ignored) {}
+    }
+    activeClientSockets.clear();
+    logger.log(Level.INFO, "All client connections have been closed.");
   }
 
   /**
