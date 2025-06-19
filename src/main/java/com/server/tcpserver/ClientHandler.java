@@ -16,15 +16,17 @@ public class ClientHandler implements Runnable {
   );
   private final Socket clientSocket;
   private final AtomicInteger connectedClients;
+  private final int clientTimeout;
 
   /**
    * Constructs a new ClientHandler for the given client socket.
    *
    * @param socket the client socket
    */
-  public ClientHandler(Socket socket, AtomicInteger connectedClients) {
+  public ClientHandler(Socket socket, AtomicInteger connectedClients, int clientTimeout) {
     this.clientSocket = socket;
     this.connectedClients = connectedClients;
+    this.clientTimeout = clientTimeout;
   }
 
   /**
@@ -33,8 +35,7 @@ public class ClientHandler implements Runnable {
   @Override
   public void run() {
     try {
-      // Set socket read timeout to 10 seconds (10000 ms)
-      clientSocket.setSoTimeout(10_000);
+      clientSocket.setSoTimeout(clientTimeout);
     } catch (IOException e) {
       logger.log(Level.SEVERE, "Failed to set socket timeout", e);
     }
@@ -54,7 +55,6 @@ public class ClientHandler implements Runnable {
         "Client timed out due to inactivity: {0}",
         clientSocket.getRemoteSocketAddress()
       );
-      // Optionally, send a message to the client before closing
       try (
         BufferedWriter out = new BufferedWriter(
           new OutputStreamWriter(clientSocket.getOutputStream())

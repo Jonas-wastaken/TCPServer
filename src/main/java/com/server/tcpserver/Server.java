@@ -4,9 +4,11 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
 import java.io.BufferedReader;
+import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketException;
@@ -90,13 +92,14 @@ public class Server {
   private void acceptClientConnections() {
     try {
       Socket clientSocket = serverSocket.get().accept();
+
       logger.log(
         Level.INFO,
         "New connection from {0}",
         clientSocket.getRemoteSocketAddress()
       );
       connectedClients.incrementAndGet();
-      executor.execute(new ClientHandler(clientSocket, connectedClients));
+      executor.execute(new ClientHandler(clientSocket, connectedClients, config.getClientTimeout()));
       adjustThreadPool();
     } catch (SocketException se) {
       if (running) {
@@ -356,6 +359,7 @@ class ServerConfig {
   private final int port;
   private final int bufferSize;
   private final int maxPoolSize;
+  private final int clientTimeout;
 
   /**
    * Constructs a new ServerConfig.
@@ -364,10 +368,11 @@ class ServerConfig {
    * @param bufferSize  the number of idle threads to keep in the pool
    * @param maxPoolSize the maximum number of threads in the pool
    */
-  private ServerConfig(int port, int bufferSize, int maxPoolSize) {
+  private ServerConfig(int port, int bufferSize, int maxPoolSize, int clientTimeout) {
     this.port = port;
     this.bufferSize = bufferSize;
     this.maxPoolSize = maxPoolSize;
+    this.clientTimeout = clientTimeout;
   }
 
   /**
@@ -398,6 +403,15 @@ class ServerConfig {
   }
 
   /**
+   * Gets the client timeout.
+   *
+   * @return the client timeout
+   */
+  public int getClientTimeout() {
+    return clientTimeout;
+  }
+
+  /**
    * Loads server configuration from a JSON resource on the classpath.
    *
    * @param resourceName the resource name (e.g., "config.json")
@@ -423,7 +437,8 @@ class ServerConfig {
       int port = json.getInt("port");
       int bufferSize = json.getInt("buffer_size");
       int maxPoolSize = json.getInt("max_pool_size");
-      return new ServerConfig(port, bufferSize, maxPoolSize);
+      int clientTimeout = json.getInt("client_timeout");
+      return new ServerConfig(port, bufferSize, maxPoolSize, clientTimeout);
     }
   }
 }
