@@ -34,6 +34,18 @@ public class ClientHandler implements Runnable {
    */
   @Override
   public void run() {
+    // Notify client that they are now being served
+    try {
+      BufferedWriter out = new BufferedWriter(
+        new OutputStreamWriter(clientSocket.getOutputStream())
+      );
+      out.write("You are now connected.");
+      out.newLine();
+      out.flush();
+    } catch (IOException e) {
+      logger.log(Level.SEVERE, "Failed to notify client of connection", e);
+    }
+
     try {
       clientSocket.setSoTimeout(clientTimeout);
     } catch (IOException e) {

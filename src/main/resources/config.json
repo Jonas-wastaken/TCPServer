@@ -2,5 +2,6 @@
     "port": 12345,
     "buffer_size": 3,
     "max_pool_size": 4,
-    "client_timeout": 2147483647
+    "client_timeout": 2147483647,
+    "queue_size": 3
 }

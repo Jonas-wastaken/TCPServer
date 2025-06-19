@@ -13,7 +13,7 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketException;
 import java.util.concurrent.Executors;
-import java.util.concurrent.SynchronousQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -52,7 +52,7 @@ public class Server {
       config.getMaxPoolSize(),
       30L,
       TimeUnit.SECONDS,
-      new SynchronousQueue<>(),
+      new LinkedBlockingQueue<>(config.getQueueSize()),
       Executors.defaultThreadFactory(),
       new ThreadPoolExecutor.AbortPolicy()
     );
@@ -93,14 +93,31 @@ public class Server {
     try {
       Socket clientSocket = serverSocket.get().accept();
 
-      // Check if the thread pool can accept a new client
-      int active = executor.getActiveCount();
-      int max = executor.getMaximumPoolSize();
-      // For SynchronousQueue, if all threads are busy, no new task can be accepted
-      if (active >= max) {
+      // Immediately notify the client they may be queued
+      try {
+        BufferedWriter out = new BufferedWriter(
+          new OutputStreamWriter(clientSocket.getOutputStream())
+        );
+        out.write("You are in the queue, please wait...");
+        out.newLine();
+        out.flush();
+      } catch (IOException e) {
+        logger.log(Level.WARNING, "Failed to notify client of queue status", e);
+      }
+
+      logger.log(
+        Level.INFO,
+        "New connection from {0}",
+        clientSocket.getRemoteSocketAddress()
+      );
+      connectedClients.incrementAndGet();
+      try {
+        executor.execute(new ClientHandler(clientSocket, connectedClients, config.getClientTimeout()));
+        adjustThreadPool();
+      } catch (java.util.concurrent.RejectedExecutionException ex) {
         Logger.getLogger(Server.class.getName()).log(
           Level.WARNING,
-          "Rejected connection from {0}: server is busy (no available threads)",
+          "Rejected connection from {0}: server is busy (queue full)",
           clientSocket.getRemoteSocketAddress()
         );
         try (BufferedWriter out = new BufferedWriter(
@@ -111,17 +128,8 @@ public class Server {
           out.flush();
         } catch (IOException ignored) {}
         clientSocket.close();
-        return;
+        connectedClients.decrementAndGet();
       }
-
-      logger.log(
-        Level.INFO,
-        "New connection from {0}",
-        clientSocket.getRemoteSocketAddress()
-      );
-      connectedClients.incrementAndGet();
-      executor.execute(new ClientHandler(clientSocket, connectedClients, config.getClientTimeout()));
-      adjustThreadPool();
     } catch (SocketException se) {
       if (running) {
         logger.log(
@@ -381,6 +389,7 @@ class ServerConfig {
   private final int bufferSize;
   private final int maxPoolSize;
   private final int clientTimeout;
+  private final int queueSize;
 
   /**
    * Constructs a new ServerConfig.
@@ -389,11 +398,12 @@ class ServerConfig {
    * @param bufferSize  the number of idle threads to keep in the pool
    * @param maxPoolSize the maximum number of threads in the pool
    */
-  private ServerConfig(int port, int bufferSize, int maxPoolSize, int clientTimeout) {
+  private ServerConfig(int port, int bufferSize, int maxPoolSize, int clientTimeout, int queueSize) {
     this.port = port;
     this.bufferSize = bufferSize;
     this.maxPoolSize = maxPoolSize;
     this.clientTimeout = clientTimeout;
+    this.queueSize = queueSize;
   }
 
   /**
@@ -433,6 +443,15 @@ class ServerConfig {
   }
 
   /**
+   * Gets the queue size.
+   *
+   * @return the queue size
+   */
+  public int getQueueSize() {
+    return queueSize;
+  }
+
+  /**
    * Loads server configuration from a JSON resource on the classpath.
    *
    * @param resourceName the resource name (e.g., "config.json")
@@ -459,7 +478,8 @@ class ServerConfig {
       int bufferSize = json.getInt("buffer_size");
       int maxPoolSize = json.getInt("max_pool_size");
       int clientTimeout = json.getInt("client_timeout");
-      return new ServerConfig(port, bufferSize, maxPoolSize, clientTimeout);
+      int queueSize = json.getInt("queue_size");
+      return new ServerConfig(port, bufferSize, maxPoolSize, clientTimeout, queueSize);
     }
   }
 }
