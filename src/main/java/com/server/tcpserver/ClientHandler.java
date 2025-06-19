@@ -32,6 +32,13 @@ public class ClientHandler implements Runnable {
    */
   @Override
   public void run() {
+    try {
+      // Set socket read timeout to 10 seconds (10000 ms)
+      clientSocket.setSoTimeout(10_000);
+    } catch (IOException e) {
+      logger.log(Level.SEVERE, "Failed to set socket timeout", e);
+    }
+
     try (
       BufferedReader in = new BufferedReader(
         new InputStreamReader(clientSocket.getInputStream())
@@ -41,6 +48,24 @@ public class ClientHandler implements Runnable {
       )
     ) {
       handleClient(in, out);
+    } catch (java.net.SocketTimeoutException e) {
+      logger.log(
+        Level.INFO,
+        "Client timed out due to inactivity: {0}",
+        clientSocket.getRemoteSocketAddress()
+      );
+      // Optionally, send a message to the client before closing
+      try (
+        BufferedWriter out = new BufferedWriter(
+          new OutputStreamWriter(clientSocket.getOutputStream())
+        )
+      ) {
+        out.write("Disconnected due to inactivity.");
+        out.newLine();
+        out.flush();
+      } catch (IOException ignored) {
+        // Ignored because the client is already being disconnected due to inactivity
+      }
     } catch (IOException e) {
       logger.log(
         Level.SEVERE,
