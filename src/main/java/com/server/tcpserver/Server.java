@@ -1,7 +1,5 @@
 package com.server.tcpserver;
 
-import com.sun.net.httpserver.HttpExchange;
-import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -21,7 +19,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import org.json.JSONObject;
 
 /**
  * A TCP server that listens on a specified port, manages client connections using a warm thread pool,
@@ -31,16 +28,26 @@ import org.json.JSONObject;
 @SuppressWarnings("restriction") // Suppress warnings for using com.sun.net.httpserver.HttpServer
 public class Server {
 
+  /** Server configuration object. */
   private final ServerConfig config;
+  /** Thread pool executor for handling client connections. */
   private final ThreadPoolExecutor executor;
+  /** Reference to the server socket. */
   private final AtomicReference<ServerSocket> serverSocket =
     new AtomicReference<>(null);
+  /** Logger for server events. */
   private final Logger logger = Logger.getLogger(Server.class.getName());
+  /** Indicates if the server is running. */
   private volatile boolean running = true;
+  /** Thread responsible for shrinking the thread pool. */
   private Thread shrinker;
+  /** Counter for connected clients. */
   private final AtomicInteger connectedClients = new AtomicInteger(0);
+  /** Thread for monitoring server status. */
   private Thread monitorThread;
+  /** HTTP server for REST monitoring endpoint. */
   private HttpServer httpServer;
+  /** Set of currently active client sockets. */
   private final Set<Socket> activeClientSockets = ConcurrentHashMap.newKeySet();
 
   /**
@@ -91,6 +98,7 @@ public class Server {
 
   /**
    * Accepts incoming client connections and submits them to the thread pool.
+   * Notifies clients if they are queued or if the server is busy.
    */
   private void acceptClientConnections() {
     try {
@@ -159,6 +167,7 @@ public class Server {
 
   /**
    * Periodically shrinks the thread pool based on current load and buffer size.
+   * Runs in a background thread.
    */
   private void shrinkThreadPool() {
     while (running) {
@@ -208,6 +217,7 @@ public class Server {
 
   /**
    * Watches for the "shutdown" command from the console and initiates graceful shutdown.
+   * Sends a warning to all clients and schedules forced disconnect after 60 seconds.
    */
   private void watchShutdown() {
     try (
@@ -272,6 +282,9 @@ public class Server {
     }
   }
 
+  /**
+   * Forcefully closes all active client connections and clears the set.
+   */
   private void forceCloseAllClients() {
     logger.log(Level.INFO, "Forcefully closing all active client connections...");
     for (Socket socket : activeClientSockets) {
@@ -298,12 +311,16 @@ public class Server {
   }
 
   /**
-   * Starts a simple REST endpoint for monitoring.
+   * Starts a simple REST endpoint for monitoring server status.
+   * The endpoint is available at http://localhost:8081/monitor.
    */
   private void startRestMonitor() {
     try {
       httpServer = HttpServer.create(new java.net.InetSocketAddress(8081), 0);
-      httpServer.createContext("/monitor", new MonitorHandler());
+      httpServer.createContext(
+        "/monitor",
+        new MonitorHandler(executor, connectedClients)
+      );
       httpServer.setExecutor(Executors.newSingleThreadExecutor());
       httpServer.start();
       logger.log(
@@ -316,33 +333,9 @@ public class Server {
   }
 
   /**
-   * Handler for the /monitor REST endpoint.
-   */
-  private class MonitorHandler implements HttpHandler {
-
-    @Override
-    public void handle(HttpExchange exchange) throws IOException {
-      if (!exchange.getRequestMethod().equalsIgnoreCase("GET")) {
-        exchange.sendResponseHeaders(405, -1); // Method Not Allowed
-        return;
-      }
-      JSONObject json = new JSONObject();
-      json.put("active_threads", executor.getActiveCount());
-      json.put("pool_size", executor.getPoolSize());
-      json.put("queue_size", executor.getQueue().size());
-      json.put("connected_clients", connectedClients.get());
-
-      byte[] response = json.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
-      exchange.getResponseHeaders().set("Content-Type", "application/json");
-      exchange.sendResponseHeaders(200, response.length);
-      try (java.io.OutputStream os = exchange.getResponseBody()) {
-        os.write(response);
-      }
-    }
-  }
-
-  /**
    * Shuts down the server and thread pool gracefully.
+   * Stops the REST endpoint, monitor thread, and pool shrinker.
+   * Waits for active handlers to finish, then forces shutdown if needed.
    */
   private void shutdown() {
     if (httpServer != null) httpServer.stop(0);
@@ -394,7 +387,7 @@ public class Server {
   }
 
   /**
-   * Starts the monitor thread to log server status.
+   * Starts the monitor thread to log server status every 10 seconds.
    */
   private void startMonitorThread() {
     monitorThread = new Thread(
