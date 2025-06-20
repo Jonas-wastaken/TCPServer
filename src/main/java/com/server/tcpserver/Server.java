@@ -29,6 +29,7 @@ import org.json.JSONObject;
  * and supports graceful shutdown via a console command. The server maintains a buffer of idle handler threads,
  * automatically scales the thread pool based on load, and allows for dynamic shrinking of the pool.
  */
+@SuppressWarnings("restriction") // Suppress warnings for using com.sun.net.httpserver.HttpServer
 public class Server {
 
   private final ServerConfig config;
