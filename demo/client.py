@@ -230,5 +230,5 @@ class RXError(Exception):
 if __name__ == "__main__":
     HOST = "localhost"
     PORT = 12345
-    RUNTIME = None
+    RUNTIME = 10
     Client(host=HOST, port=PORT, run_time=RUNTIME)

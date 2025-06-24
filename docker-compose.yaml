@@ -1,0 +1,19 @@
+services:
+  server:
+    build:
+      context: ./tcp-server
+      dockerfile: Dockerfile
+    ports:
+      - "8081:8081"
+      - "12345:12345" # This needs to match the port of the server socket
+    container_name: server
+
+  demo:
+    build:
+      context: ./demo
+      dockerfile: Dockerfile
+    ports:
+      - "8501:8501"
+    container_name: demo
+
+  
