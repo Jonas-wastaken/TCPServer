@@ -14,7 +14,9 @@ WORKDIR /server
 
 COPY --from=build /build/target/server-1.0.jar .
 
+EXPOSE 8081
+
 # This needs to match the port of the server socket
-EXPOSE 8081 12345
+EXPOSE 12345
 
 ENTRYPOINT ["java", "-jar", "server-1.0.jar"]
