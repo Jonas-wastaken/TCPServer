@@ -1,4 +1,4 @@
-package com.server.tcpserver;
+package com.server;
 
 import com.sun.net.httpserver.HttpServer;
 import java.io.BufferedReader;

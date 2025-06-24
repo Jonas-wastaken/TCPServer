@@ -1,4 +1,4 @@
-package com.server.tcpserver;
+package com.server;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;

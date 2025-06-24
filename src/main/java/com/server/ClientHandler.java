@@ -1,4 +1,4 @@
-package com.server.tcpserver;
+package com.server;
 
 import java.io.*;
 import java.net.Socket;
