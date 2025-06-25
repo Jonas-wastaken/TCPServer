@@ -8,4 +8,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 EXPOSE 8501
 
-ENTRYPOINT ["python3", "-m", "streamlit", "run", "app.py"]
+ENTRYPOINT ["python3", "-m", "streamlit", "run", "dashboard.py"]
