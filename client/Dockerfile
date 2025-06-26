@@ -4,4 +4,4 @@ WORKDIR /app
 
 COPY . /app/
 
-ENTRYPOINT ["python3", "client.py"]
+# ENTRYPOINT ["python3", "client.py"]

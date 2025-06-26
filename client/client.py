@@ -14,6 +14,7 @@ Classes:
     RXError: Exception for reception errors.
 """
 
+import argparse
 import logging
 import os
 import socket
@@ -228,5 +229,14 @@ class RXError(Exception):
 
 
 if __name__ == "__main__":
-    RUNTIME = 10
-    Client(run_time=RUNTIME)
+    parser = argparse.ArgumentParser(description="TCP Client")
+    parser.add_argument(
+        "--runtime",
+        "-r",
+        type=int,
+        default=10,
+        help="Duration in seconds to run the client (default: 10). Use 0 or negative for indefinite.",
+    )
+    args = parser.parse_args()
+    runtime = args.runtime if args.runtime > 0 else None
+    Client(run_time=runtime)
