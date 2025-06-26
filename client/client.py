@@ -6,7 +6,7 @@ sending periodic 'ping' messages, receiving responses, and handling connection e
 It also defines custom exceptions for transmission (TXError) and reception (RXError) errors.
 
 Example usage:
-    Client(host='localhost', port=12345, run_time=None)
+    Client(run_time=None)
 
 Classes:
     Client: Handles TCP communication with the server.
@@ -15,6 +15,7 @@ Classes:
 """
 
 import logging
+import os
 import socket
 import time
 from typing import List, TextIO
@@ -29,9 +30,9 @@ class Client:
     It provides methods for connecting, sending messages, receiving responses, and disconnecting.
 
     Attributes:
+        HOST (str): The Server host address.
+        PORT (int): The port the server listens on.
         __run_time (int | None): Duration in seconds to run the client. If None, runs indefinitely.
-        __host (str): Server hostname or IP address.
-        __port (int): Server port number.
         __sock (socket.socket): TCP socket for communication.
         __in_file (TextIO): File-like object for reading from the server.
         __out_file (TextIO): File-like object for writing to the server.
@@ -49,19 +50,18 @@ class Client:
         Sends a quit message and closes the connection. <br>
     """
 
-    def __init__(self, host: str, port: int, run_time: int | None = None):
+    HOST = os.getenv("SERVER_HOST", "localhost")
+    PORT = int(os.getenv("SERVER_PORT", "12345"))
+
+    def __init__(self, run_time: int | None = None):
         """
         Initialize a new Client, connect to the server, send periodic pings, and disconnect.
 
         Args:
-            host (str): The server hostname or IP address.
-            port (int): The server port number.
             run_time (int | None, optional): Runtime of the client (seconds).
                 If None, runs indefinitely.
         """
         self.__run_time = run_time
-        self.__host = host
-        self.__port = port
         self.__sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.__in_file = TextIO()
         self.__out_file = TextIO()
@@ -77,7 +77,7 @@ class Client:
         Establish a TCP connection to the server and prepare file-like objects for communication.
         Receives and prints the initial server responses.
         """
-        self.__sock.connect((self.__host, self.__port))
+        self.__sock.connect((Client.HOST, Client.PORT))
 
         self.__in_file = self.__sock.makefile("r")
         self.__out_file = self.__sock.makefile("w")
@@ -166,7 +166,7 @@ class Client:
         Returns:
             str: String representation of the client.
         """
-        return f"Client(host={self.__host}, port={self.__port}, run_time={self.__run_time})"
+        return f"Client(host={Client.HOST}, port={Client.PORT}, run_time={self.__run_time})"
 
 
 class TXError(Exception):
@@ -228,7 +228,5 @@ class RXError(Exception):
 
 
 if __name__ == "__main__":
-    HOST = "localhost"
-    PORT = 12345
     RUNTIME = 10
-    Client(host=HOST, port=PORT, run_time=RUNTIME)
+    Client(run_time=RUNTIME)

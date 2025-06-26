@@ -12,6 +12,7 @@ Dependencies:
     - streamlit_autorefresh
 """
 
+import os
 from typing import Dict
 import pandas as pd
 import plotly.express as px
@@ -30,6 +31,8 @@ class Dashboard:
 
     Attributes:
         CONF (dict): Streamlit page configuration settings.
+        HOST (str): The Server host address.
+        PORT (int): The port the server's monitoring API uses.
         MONITORING_URL (str): URL endpoint for fetching monitoring statistics.
     """
 
@@ -41,7 +44,10 @@ class Dashboard:
         "menu_items": None,
     }
 
-    MONITORING_URL = "http://localhost:8081/monitor"
+    HOST = os.getenv("SERVER_HOST", "localhost")
+    PORT = int(os.getenv("SERVER_PORT", "8081"))
+
+    MONITORING_URL = f"http://{HOST}:{PORT}/monitor"
 
     def __init__(self):
         """
