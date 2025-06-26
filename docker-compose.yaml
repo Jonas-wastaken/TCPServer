@@ -13,18 +13,18 @@ services:
       - server
     environment:
       - SERVER_HOST=server
-      - SERVER_PORT=12345
+      - SERVER_PORT=12345 # This needs to match the port the server socket listens on: tcp-server/src/main/resources/config.json
 
   dashboard:
     build:
       context: ./dashboard
       dockerfile: Dockerfile
     ports:
-      - "8501:8501"
+      - "8501:8501" # Default port for Streamlit applications
     depends_on:
       - server
     container_name: dashboard
     environment:
       - SERVER_HOST=server
-      - SERVER_PORT=8081
+      - SERVER_PORT=8081 # This needs to match the port of the monitoring endpoint: tcp-server/src/main/resources/config.json
 
