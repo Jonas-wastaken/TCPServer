@@ -316,7 +316,7 @@ public class Server {
    */
   private void startRestMonitor() {
     try {
-      httpServer = HttpServer.create(new java.net.InetSocketAddress(config.getMonitoringPort), 0);
+      httpServer = HttpServer.create(new java.net.InetSocketAddress(config.getMonitoringPort()), 0);
       httpServer.createContext(
         "/monitor",
         new MonitorHandler(executor, connectedClients)
@@ -325,7 +325,7 @@ public class Server {
       httpServer.start();
       logger.log(
         Level.INFO,
-        "REST monitor endpoint started on http://localhost:{0}/monitor", config.getMonitoringPort
+        "REST monitor endpoint started on http://localhost:{0}/monitor", config.getMonitoringPort()
       );
     } catch (IOException e) {
       logger.log(Level.SEVERE, "Failed to start REST monitor endpoint", e);
