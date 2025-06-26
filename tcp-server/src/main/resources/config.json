@@ -1,5 +1,6 @@
 {
     "port": 12345,
+    "monitoring_port": 8081,
     "buffer_size": 3,
     "max_pool_size": 4,
     "client_timeout": 2147483647,
