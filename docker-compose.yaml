@@ -3,8 +3,8 @@ services:
     build:
       context: ./tcp-server
       dockerfile: Dockerfile
-    ports:
-      # Expose server ports as needed
+    # Expose server ports as needed
+    # ports:
       # - "8081:8081"
       # - "12345:12345"
     container_name: server
@@ -18,5 +18,15 @@ services:
       - server
     environment:
       - SERVER_HOST=server
-      - SERVER_PORT=12345 # This needs to match the port the server socket listens on: tcp-server/src/main/resources/config.json
+      - SERVER_PORT=12345 # This needs to match the port the server socket listens on
+
+  http_client:
+    build:
+      context: ./http_client
+      dockerfile: Dockerfile
+    depends_on:
+      - server
+    environment:
+      - SERVER_HOST=server
+      - MONITORING_PORT=8081 # This needs to match the port of the api endpoint
 
