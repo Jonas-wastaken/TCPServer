@@ -3,19 +3,19 @@ TCP Client Module
 
 This module provides a Client class for establishing a TCP connection to a server,
 sending periodic 'ping' messages, receiving responses, and handling connection errors.
-It also defines custom exceptions for transmission (TXError) and reception (RXError) errors.
+It also defines custom exceptions for connection (ConnError), transmission (TXError), and reception (RXError) errors.
 
 Example usage:
-    Client(run_time=None)
+    python3 client.py -r -1
 
 Classes:
     Client: Handles TCP communication with the server.
+    ConnError: Exception for connection errors.
     TXError: Exception for transmission errors.
     RXError: Exception for reception errors.
 """
 
 import argparse
-import logging
 import os
 import socket
 import time
@@ -78,7 +78,10 @@ class Client:
         Establish a TCP connection to the server and prepare file-like objects for communication.
         Receives and prints the initial server responses.
         """
-        self.__sock.connect((Client.HOST, Client.PORT))
+        try:
+            self.__sock.connect((Client.HOST, Client.PORT))
+        except Exception as e:
+            raise ConnError(message=e) from e
 
         self.__in_file = self.__sock.makefile("r")
         self.__out_file = self.__sock.makefile("w")
@@ -108,8 +111,6 @@ class Client:
             return response
 
         except Exception as e:
-            logging.log(level=30, msg=e)
-
             raise RXError(message=e) from e
 
     def __send_message(self, message: str) -> str:
@@ -134,8 +135,6 @@ class Client:
             return message
 
         except Exception as e:
-            logging.log(level=30, msg=e)
-
             raise TXError(message=e) from e
 
     def __ping(self) -> None:
@@ -168,6 +167,35 @@ class Client:
             str: String representation of the client.
         """
         return f"Client(host={Client.HOST}, port={Client.PORT}, run_time={self.__run_time})"
+
+
+class ConnError(Exception):
+    """Exception raised for errors that occur while connecting to the server.
+
+    Attributes:
+        message (str): Explanation of the error.
+    """
+
+    PREAMBLE = "Error while connecting to the server: \n"
+
+    def __init__(self, message):
+        """
+        Initialize a ConnError with a detailed error message.
+
+        Args:
+            message (str): The error message describing what went wrong during connection.
+        """
+        self.message = ConnError.PREAMBLE + message
+        super().__init__(self.message)
+
+    def __str__(self):
+        """
+        Return a string representation of the ConnError instance.
+
+        Returns:
+            str: String representation of the error.
+        """
+        return f"{self.message}"
 
 
 class TXError(Exception):
@@ -235,7 +263,7 @@ if __name__ == "__main__":
         "-r",
         type=int,
         default=10,
-        help="Duration in seconds to run the client (default: 10). Use 0 or negative for indefinite.",
+        help="Seconds to run the client (default: 10). Use 0 or negative for indefinite.",
     )
     args = parser.parse_args()
     runtime = args.runtime if args.runtime > 0 else None
