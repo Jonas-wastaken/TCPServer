@@ -3,6 +3,8 @@ services:
     build:
       context: ./tcp-server
       dockerfile: Dockerfile
+    stdin_open: true
+    tty: true
     # Expose server ports as needed
     # ports:
       # - "8081:8081"

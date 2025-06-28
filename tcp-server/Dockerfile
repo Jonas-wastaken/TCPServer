@@ -14,6 +14,7 @@ WORKDIR /server
 
 COPY --from=build /build/target/server-1.0.jar .
 
+# This needs to match the monitoring port
 EXPOSE 8081
 
 # This needs to match the port of the server socket
