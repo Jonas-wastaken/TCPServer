@@ -16,6 +16,8 @@ services:
       context: ./client
       dockerfile: Dockerfile
     command: tail -f /dev/null
+    stdin_open: true
+    tty: true
     depends_on:
       - server
     environment:
