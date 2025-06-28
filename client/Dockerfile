@@ -6,4 +6,4 @@ COPY . /app/
 
 RUN apk add --no-cache busybox-extras
 
-# ENTRYPOINT ["python3", "client.py"]
+# ENTRYPOINT ["python3", "client.py", "-r", "-1"]
