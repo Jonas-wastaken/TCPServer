@@ -31,4 +31,5 @@ services:
     environment:
       - SERVER_HOST=server
       - MONITORING_PORT=8081 # This needs to match the port of the api endpoint
+    container_name: http_client
 
