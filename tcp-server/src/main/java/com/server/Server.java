@@ -21,31 +21,41 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * A TCP server that listens on a specified port, manages client connections using a warm thread pool,
- * and supports graceful shutdown via a console command. The server maintains a buffer of idle handler threads,
- * automatically scales the thread pool based on load, and allows for dynamic shrinking of the pool.
+ * A TCP server listening for incoming client connections.
+ * Clients are assigned a thread from a dynamically scaling warm thread pool.
+ * Supports client timeout.
+ * Can be gracefully shutdown. Active clients are forcefully disconnected.
+ * Provides a REST endpoint for retrieving monitoring statistics.
+ * Server settings can be configured configured via a configuration file.
  */
 @SuppressWarnings("restriction") // Suppress warnings for using com.sun.net.httpserver.HttpServer
 public class Server {
 
-  /** Server configuration object. */
+  // ServerConfig instance holding configuration settings.
   private final ServerConfig config;
-  /** Thread pool executor for handling client connections. */
-  private final ThreadPoolExecutor executor;
-  /** Reference to the server socket. */
-  private final AtomicReference<ServerSocket> serverSocket =
-    new AtomicReference<>(null);
-  /** Logger for server events. */
-  private final Logger logger = Logger.getLogger(Server.class.getName());
-  /** Indicates if the server is running. */
+
+  // Flag indicating whether the server is running.
   private volatile boolean running = true;
-  /** Thread responsible for shrinking the thread pool. */
+
+  // Reference to the server socket. Requires thread safety.
+  private final AtomicReference<ServerSocket> serverSocket = new AtomicReference<>(null);
+
+  // ThreadPoolExecutor instance for handling client connections.
+  private final ThreadPoolExecutor executor;
+
+  // Thread responsible for shrinking the thread pool.
   private Thread shrinker;
-  /** Counter for connected clients. */
-  private final AtomicInteger connectedClients = new AtomicInteger(0);
-  /** HTTP server for REST monitoring endpoint. */
+
+  // Logger instance for server events.
+  private final Logger logger = Logger.getLogger(Server.class.getName());
+
+  // HTTP server providing the RESTApi monitoring endpoint.
   private HttpServer httpServer;
-  /** Set of currently active client sockets. */
+
+  // Counter for connected clients. Requires thread safety.
+  private final AtomicInteger connectedClients = new AtomicInteger(0);
+
+  // Set of currently active client sockets. Requires thread safety.
   private final Set<Socket> activeClientSockets = ConcurrentHashMap.newKeySet();
 
   /**
@@ -56,14 +66,13 @@ public class Server {
   public Server(ServerConfig config) {
     this.config = config;
     this.executor = new ThreadPoolExecutor(
-      config.getBufferSize(),
-      config.getMaxPoolSize(),
-      30L,
-      TimeUnit.SECONDS,
-      new LinkedBlockingQueue<>(config.getQueueSize()),
-      Executors.defaultThreadFactory(),
-      new ThreadPoolExecutor.AbortPolicy()
-    );
+        config.getBufferSize(),
+        config.getMaxPoolSize(),
+        30L,
+        TimeUnit.SECONDS,
+        new LinkedBlockingQueue<>(config.getQueueSize()),
+        Executors.defaultThreadFactory(),
+        new ThreadPoolExecutor.AbortPolicy());
     this.executor.prestartAllCoreThreads();
   }
 
@@ -84,10 +93,9 @@ public class Server {
       }
     } catch (IOException e) {
       logger.log(
-        Level.SEVERE,
-        String.format("Error starting server on port %d", config.getPort()),
-        e
-      );
+          Level.SEVERE,
+          String.format("Error starting server on port %d", config.getPort()),
+          e);
     } finally {
       shutdown();
     }
@@ -104,8 +112,7 @@ public class Server {
       // Immediately notify the client they may be queued
       try {
         BufferedWriter out = new BufferedWriter(
-          new OutputStreamWriter(clientSocket.getOutputStream())
-        );
+            new OutputStreamWriter(clientSocket.getOutputStream()));
         out.write("You are in the queue, please wait...");
         out.newLine();
         out.flush();
@@ -114,28 +121,27 @@ public class Server {
       }
 
       logger.log(
-        Level.INFO,
-        "New connection from {0}",
-        clientSocket.getRemoteSocketAddress()
-      );
+          Level.INFO,
+          "New connection from {0}",
+          clientSocket.getRemoteSocketAddress());
       connectedClients.incrementAndGet();
       activeClientSockets.add(clientSocket);
       try {
-        executor.execute(new ClientHandler(clientSocket, connectedClients, config.getClientTimeout(), activeClientSockets));
+        executor
+            .execute(new ClientHandler(clientSocket, connectedClients, config.getClientTimeout(), activeClientSockets));
         adjustThreadPool();
       } catch (java.util.concurrent.RejectedExecutionException ex) {
         Logger.getLogger(Server.class.getName()).log(
-          Level.WARNING,
-          "Rejected connection from {0}: server is busy (queue full)",
-          clientSocket.getRemoteSocketAddress()
-        );
+            Level.WARNING,
+            "Rejected connection from {0}: server is busy (queue full)",
+            clientSocket.getRemoteSocketAddress());
         try (BufferedWriter out = new BufferedWriter(
-          new OutputStreamWriter(clientSocket.getOutputStream()))
-        ) {
+            new OutputStreamWriter(clientSocket.getOutputStream()))) {
           out.write("Server busy. Try again later.");
           out.newLine();
           out.flush();
-        } catch (IOException ignored) {}
+        } catch (IOException ignored) {
+        }
         clientSocket.close();
         connectedClients.decrementAndGet();
         activeClientSockets.remove(clientSocket);
@@ -143,10 +149,9 @@ public class Server {
     } catch (SocketException se) {
       if (running) {
         logger.log(
-          Level.SEVERE,
-          "SocketException in accept(): {0}",
-          se.getMessage()
-        );
+            Level.SEVERE,
+            "SocketException in accept(): {0}",
+            se.getMessage());
       }
     } catch (IOException e) {
       logger.log(Level.SEVERE, "I/O error while accepting connection", e);
@@ -171,9 +176,8 @@ public class Server {
       try {
         Thread.sleep(10_000);
         int desiredCore = Math.max(
-          config.getBufferSize(),
-          executor.getActiveCount() + config.getBufferSize()
-        );
+            config.getBufferSize(),
+            executor.getActiveCount() + config.getBufferSize());
         desiredCore = Math.min(desiredCore, executor.getMaximumPoolSize());
         if (desiredCore < executor.getCorePoolSize()) {
           executor.setCorePoolSize(desiredCore);
@@ -191,9 +195,8 @@ public class Server {
   private void adjustThreadPool() {
     int currentActive = connectedClients.get();
     int desiredCore = Math.min(
-      currentActive + config.getBufferSize(),
-      executor.getMaximumPoolSize()
-    );
+        currentActive + config.getBufferSize(),
+        executor.getMaximumPoolSize());
     if (desiredCore > executor.getCorePoolSize()) {
       executor.setCorePoolSize(desiredCore);
       executor.prestartAllCoreThreads();
@@ -205,30 +208,28 @@ public class Server {
    */
   private void startShutdownWatcher() {
     Thread consoleWatcher = new Thread(
-      this::watchShutdown,
-      "ShutdownWatcherThread"
-    );
+        this::watchShutdown,
+        "ShutdownWatcherThread");
     consoleWatcher.setDaemon(true);
     consoleWatcher.start();
   }
 
   /**
-   * Watches for the "shutdown" command from the console and initiates graceful shutdown.
-   * Sends a warning to all clients and schedules forced disconnect after 60 seconds.
+   * Watches for the "shutdown" command from the console and initiates graceful
+   * shutdown.
+   * Sends a warning to all clients and schedules forced disconnect after 60
+   * seconds.
    */
   private void watchShutdown() {
     try (
-      BufferedReader consoleIn = new BufferedReader(
-        new InputStreamReader(System.in)
-      )
-    ) {
+        BufferedReader consoleIn = new BufferedReader(
+            new InputStreamReader(System.in))) {
       String line;
       while ((line = consoleIn.readLine()) != null) {
         if (line.trim().equalsIgnoreCase("shutdown")) {
           logger.log(
-            Level.INFO,
-            "\"shutdown\" command received. Initiating graceful shutdown..."
-          );
+              Level.INFO,
+              "\"shutdown\" command received. Initiating graceful shutdown...");
           running = false;
           shrinker.interrupt();
           closeServerSocket();
@@ -241,24 +242,23 @@ public class Server {
             try {
               Thread.sleep(60_000);
               forceCloseAllClients();
-            } catch (InterruptedException ignored) {}
+            } catch (InterruptedException ignored) {
+            }
           }, "ForceDisconnectThread").start();
 
           break;
         } else {
           logger.log(
-            Level.INFO,
-            "Unrecognized console command: \"{0}\". Type \"shutdown\" to stop the server.",
-            line
-          );
+              Level.INFO,
+              "Unrecognized console command: \"{0}\". Type \"shutdown\" to stop the server.",
+              line);
         }
       }
     } catch (IOException e) {
       logger.log(
-        Level.SEVERE,
-        "Error reading from console. Server will not shut down via console watcher.",
-        e
-      );
+          Level.SEVERE,
+          "Error reading from console. Server will not shut down via console watcher.",
+          e);
     }
   }
 
@@ -270,12 +270,12 @@ public class Server {
     for (Socket socket : activeClientSockets) {
       try {
         BufferedWriter out = new BufferedWriter(
-          new OutputStreamWriter(socket.getOutputStream())
-        );
+            new OutputStreamWriter(socket.getOutputStream()));
         out.write("Server is shutting down in 60 seconds. Please disconnect.");
         out.newLine();
         out.flush();
-      } catch (IOException ignored) {}
+      } catch (IOException ignored) {
+      }
     }
   }
 
@@ -287,7 +287,8 @@ public class Server {
     for (Socket socket : activeClientSockets) {
       try {
         socket.close();
-      } catch (IOException ignored) {}
+      } catch (IOException ignored) {
+      }
     }
     activeClientSockets.clear();
     logger.log(Level.INFO, "All client connections have been closed.");
@@ -315,15 +316,13 @@ public class Server {
     try {
       httpServer = HttpServer.create(new java.net.InetSocketAddress(config.getMonitoringPort()), 0);
       httpServer.createContext(
-        "/monitor",
-        new MonitorHandler(executor, connectedClients)
-      );
+          "/monitor",
+          new MonitorHandler(executor, connectedClients));
       httpServer.setExecutor(Executors.newSingleThreadExecutor());
       httpServer.start();
       logger.log(
-        Level.INFO,
-        "REST monitor endpoint started on http://localhost:{0}/monitor", config.getMonitoringPort()
-      );
+          Level.INFO,
+          "REST monitor endpoint started on http://localhost:{0}/monitor", config.getMonitoringPort());
     } catch (IOException e) {
       logger.log(Level.SEVERE, "Failed to start REST monitor endpoint", e);
     }
@@ -335,29 +334,27 @@ public class Server {
    * Waits for active handlers to finish, then forces shutdown if needed.
    */
   private void shutdown() {
-    if (httpServer != null) httpServer.stop(0);
-    if (shrinker != null) shrinker.interrupt();
-    if (executor != null) executor.shutdown();
+    if (httpServer != null)
+      httpServer.stop(0);
+    if (shrinker != null)
+      shrinker.interrupt();
+    if (executor != null)
+      executor.shutdown();
     logger.log(
-      Level.INFO,
-      "Executor shutdown initiated. Waiting for active handlers to finish..."
-    );
+        Level.INFO,
+        "Executor shutdown initiated. Waiting for active handlers to finish...");
     try {
-      if (
-        executor != null && !executor.awaitTermination(30, TimeUnit.SECONDS)
-      ) {
+      if (executor != null && !executor.awaitTermination(30, TimeUnit.SECONDS)) {
         logger.log(
-          Level.WARNING,
-          "Not all handlers terminated within 30 seconds. Forcing shutdown..."
-        );
+            Level.WARNING,
+            "Not all handlers terminated within 30 seconds. Forcing shutdown...");
         executor.shutdownNow();
       }
     } catch (InterruptedException ie) {
       logger.log(
-        Level.SEVERE,
-        "Interrupted while waiting for handler threads to terminate",
-        ie
-      );
+          Level.SEVERE,
+          "Interrupted while waiting for handler threads to terminate",
+          ie);
       executor.shutdownNow();
       Thread.currentThread().interrupt();
     }
@@ -375,10 +372,9 @@ public class Server {
       new Server(config).start();
     } catch (IOException e) {
       Logger.getLogger(Server.class.getName()).log(
-        Level.SEVERE,
-        "Failed to load config.json",
-        e
-      );
+          Level.SEVERE,
+          "Failed to load config.json",
+          e);
     }
   }
 }
