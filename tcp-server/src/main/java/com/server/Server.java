@@ -117,7 +117,7 @@ public class Server {
   private void shrinkThreadPool() {
     while (running) {
       try {
-        Thread.sleep(10_000);
+        Thread.sleep(5_000);
         int desiredCore = Math.max(
             config.getBufferSize(),
             executor.getActiveCount() + config.getBufferSize());
