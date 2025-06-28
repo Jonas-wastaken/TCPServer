@@ -6,4 +6,4 @@ COPY . /app/
 
 RUN pip install --no-cache-dir -r requirements.txt
 
-ENTRYPOINT ["python3", "-u", "http_client.py"]
+ENTRYPOINT ["python3", "-u", "client.py"]

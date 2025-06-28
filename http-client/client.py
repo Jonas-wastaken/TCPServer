@@ -1,5 +1,5 @@
 """
-http_client.py
+client.py
 
 This module provides the HTTPClient class for communicating with a monitoring server
 via HTTP. It retrieves JSON-formatted monitoring data from a configurable endpoint,

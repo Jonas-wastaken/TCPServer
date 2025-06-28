@@ -11,9 +11,9 @@ services:
       # - "12345:12345"
     container_name: server
 
-  client:
+  tcp-client:
     build:
-      context: ./client
+      context: ./tcp-client
       dockerfile: Dockerfile
     command: tail -f /dev/null
     stdin_open: true
@@ -24,14 +24,14 @@ services:
       - SERVER_HOST=server
       - SERVER_PORT=12345 # This needs to match the port the server socket listens on
 
-  http_client:
+  http-client:
     build:
-      context: ./http_client
+      context: ./http-client
       dockerfile: Dockerfile
     depends_on:
       - server
     environment:
       - SERVER_HOST=server
       - MONITORING_PORT=8081 # This needs to match the port of the api endpoint
-    container_name: http_client
+    container_name: http-client
 

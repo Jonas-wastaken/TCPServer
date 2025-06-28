@@ -1,7 +1,7 @@
 """
 client.py
 
-This module provides a Client class for establishing a TCP connection to a server,
+This module provides a TCPClient class for establishing a TCP connection to a server,
 sending periodic 'ping' messages, receiving responses, and handling connection errors.
 It also defines custom exceptions for connection (ConnError), transmission (TXError),
 and reception (RXError) errors.
@@ -10,7 +10,7 @@ Example usage:
     python3 client.py -r -1
 
 Classes:
-    Client: Handles TCP communication with the server.
+    TCPClient: Handles TCP communication with the server.
     ConnError: Exception for connection errors.
     TXError: Exception for transmission errors.
     RXError: Exception for reception errors.
@@ -23,7 +23,7 @@ import time
 from typing import List, TextIO
 
 
-class Client:
+class TCPClient:
     """
     TCP client for connecting to a server, sending periodic 'ping' messages, and handling responses.
 
@@ -80,7 +80,7 @@ class Client:
         Receives and prints the initial server responses.
         """
         try:
-            self.__sock.connect((Client.HOST, Client.PORT))
+            self.__sock.connect((TCPClient.HOST, TCPClient.PORT))
         except Exception as e:
             raise ConnError(message=e) from e
 
@@ -167,7 +167,7 @@ class Client:
         Returns:
             str: String representation of the client.
         """
-        return f"Client(host={Client.HOST}, port={Client.PORT}, run_time={self.__run_time})"
+        return f"Client(host={TCPClient.HOST}, port={TCPClient.PORT}, run_time={self.__run_time})"
 
 
 class ConnError(Exception):
@@ -268,4 +268,4 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     runtime = args.runtime if args.runtime > 0 else None
-    Client(run_time=runtime)
+    TCPClient(run_time=runtime)
