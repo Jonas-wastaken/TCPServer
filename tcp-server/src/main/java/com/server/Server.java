@@ -144,10 +144,9 @@ public class Server {
   }
 
   /**
-   * Watches for the "shutdown" command from the console and initiates graceful
-   * shutdown.
-   * Sends a warning to all clients and schedules forced disconnect after 60
-   * seconds.
+   * Watches for the "shutdown" command from the console and initiates graceful shutdown.
+   * Sends a warning to all clients.
+   * Schedules forced disconnect.
    */
   private void watchShutdown() {
     try (
@@ -162,19 +161,8 @@ public class Server {
           running = false;
           shrinker.interrupt();
           closeServerSocket();
-
-          // Send shutdown warning to all clients
           sendShutdownWarningToClients();
-
-          // Schedule forced disconnect after 60 seconds
-          new Thread(() -> {
-            try {
-              Thread.sleep(60_000);
-              forceCloseAllClients();
-            } catch (InterruptedException ignored) {
-            }
-          }, "ForceDisconnectThread").start();
-
+          new Thread(this::scheduleForceDisconnect, "ForceDisconnectThread").start();
           break;
         } else {
           logger.log(
@@ -192,6 +180,20 @@ public class Server {
   }
 
   /**
+   * Closes the server socket if it is open.
+   */
+  private void closeServerSocket() {
+    ServerSocket sock = serverSocket.get();
+    if (sock != null && !sock.isClosed()) {
+      try {
+        sock.close();
+      } catch (IOException e) {
+        logger.log(Level.SEVERE, "Error closing ServerSocket in watcher", e);
+      }
+    }
+  }
+
+  /**
    * Sends a shutdown warning message to all connected clients.
    */
   private void sendShutdownWarningToClients() {
@@ -204,7 +206,20 @@ public class Server {
         out.newLine();
         out.flush();
       } catch (IOException ignored) {
+        // Intentionally ignored: client may have disconnected or output stream is unavailable during shutdown warning.
       }
+    }
+  }
+
+  /**
+   * Schedules force disconnect of all clients in 60 seconds.
+   */
+  private void scheduleForceDisconnect() {
+    try {
+      Thread.sleep(60_000);
+      forceCloseAllClients();
+    } catch (InterruptedException ignored) {
+      Thread.currentThread().interrupt();
     }
   }
 
@@ -221,20 +236,6 @@ public class Server {
     }
     activeClientSockets.clear();
     logger.log(Level.INFO, "All client connections have been closed.");
-  }
-
-  /**
-   * Closes the server socket if it is open.
-   */
-  private void closeServerSocket() {
-    ServerSocket sock = serverSocket.get();
-    if (sock != null && !sock.isClosed()) {
-      try {
-        sock.close();
-      } catch (IOException e) {
-        logger.log(Level.SEVERE, "Error closing ServerSocket in watcher", e);
-      }
-    }
   }
 
   /**
