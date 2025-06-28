@@ -16,7 +16,10 @@ import org.json.JSONObject;
 @SuppressWarnings("restriction")
 public class MonitorHandler implements HttpHandler {
 
+  // The ThreadPoolExecutor instance to monitor
   private final ThreadPoolExecutor executor;
+
+  // Currently connected clients. Requires thread safety.
   private final AtomicInteger connectedClients;
 
   /**
@@ -35,6 +38,7 @@ public class MonitorHandler implements HttpHandler {
 
   /**
    * Handles HTTP GET requests to the /monitor endpoint.
+   * Handles 'Method not allowed'.
    *
    * @param exchange the HTTP exchange object
    * @throws IOException if an I/O error occurs
@@ -42,7 +46,7 @@ public class MonitorHandler implements HttpHandler {
   @Override
   public void handle(HttpExchange exchange) throws IOException {
     if (!exchange.getRequestMethod().equalsIgnoreCase("GET")) {
-      exchange.sendResponseHeaders(405, -1); // Method Not Allowed
+      exchange.sendResponseHeaders(405, -1);
       return;
     }
     JSONObject json = new JSONObject();
