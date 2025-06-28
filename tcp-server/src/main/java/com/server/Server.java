@@ -43,8 +43,6 @@ public class Server {
   private Thread shrinker;
   /** Counter for connected clients. */
   private final AtomicInteger connectedClients = new AtomicInteger(0);
-  /** Thread for monitoring server status. */
-  private Thread monitorThread;
   /** HTTP server for REST monitoring endpoint. */
   private HttpServer httpServer;
   /** Set of currently active client sockets. */
@@ -75,7 +73,6 @@ public class Server {
   public void start() {
     startPoolShrinker();
     startShutdownWatcher();
-    startMonitorThread();
     startRestMonitor();
 
     try (ServerSocket sock = new ServerSocket(config.getPort())) {
@@ -339,7 +336,6 @@ public class Server {
    */
   private void shutdown() {
     if (httpServer != null) httpServer.stop(0);
-    if (monitorThread != null) monitorThread.interrupt();
     if (shrinker != null) shrinker.interrupt();
     if (executor != null) executor.shutdown();
     logger.log(
@@ -384,36 +380,5 @@ public class Server {
         e
       );
     }
-  }
-
-  /**
-   * Starts the monitor thread to log server status every 10 seconds.
-   */
-  private void startMonitorThread() {
-    monitorThread = new Thread(
-      () -> {
-        while (running) {
-          try {
-            logger.log(
-              Level.INFO,
-              "[MONITOR] Active Threads: {0}, Pool Size: {1}, Queue Size: {2}, Connected Clients: {3}",
-              new Object[] {
-                executor.getActiveCount(),
-                executor.getPoolSize(),
-                executor.getQueue().size(),
-                connectedClients.get(),
-              }
-            );
-            Thread.sleep(10_000); // Log every 10 seconds
-          } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            break;
-          }
-        }
-      },
-      "MonitorThread"
-    );
-    monitorThread.setDaemon(true);
-    monitorThread.start();
   }
 }
