@@ -144,7 +144,8 @@ public class Server {
   }
 
   /**
-   * Watches for the "shutdown" command from the console and initiates graceful shutdown.
+   * Watches for the "shutdown" command from the console and initiates graceful
+   * shutdown.
    * Sends a warning to all clients.
    * Schedules forced disconnect.
    */
@@ -206,7 +207,8 @@ public class Server {
         out.newLine();
         out.flush();
       } catch (IOException ignored) {
-        // Intentionally ignored: client may have disconnected or output stream is unavailable during shutdown warning.
+        // Intentionally ignored: client may have disconnected or output stream is
+        // unavailable during shutdown warning.
       }
     }
   }
@@ -232,6 +234,8 @@ public class Server {
       try {
         socket.close();
       } catch (IOException ignored) {
+        // Intentionally ignored: client may have disconnected or output stream is
+        // unavailable during server busy notification.
       }
     }
     activeClientSockets.clear();
@@ -259,50 +263,27 @@ public class Server {
   }
 
   /**
-   * Accepts incoming client connections and submits them to the thread pool.
-   * Notifies clients if they are queued or if the server is busy.
+   * Accepts incoming client connections.
+   * Notifies about connection status.
+   * Updates monitoring.
+   * Runs handling routine.
    */
   private void acceptClientConnections() {
     try {
       Socket clientSocket = serverSocket.get().accept();
 
-      // Immediately notify the client they may be queued
-      try {
-        BufferedWriter out = new BufferedWriter(
-            new OutputStreamWriter(clientSocket.getOutputStream()));
-        out.write("You are in the queue, please wait...");
-        out.newLine();
-        out.flush();
-      } catch (IOException e) {
-        logger.log(Level.WARNING, "Failed to notify client of queue status", e);
-      }
+      sendQueueNotification(clientSocket);
 
       logger.log(
           Level.INFO,
           "New connection from {0}",
           clientSocket.getRemoteSocketAddress());
+
       connectedClients.incrementAndGet();
       activeClientSockets.add(clientSocket);
-      try {
-        executor
-            .execute(new ClientHandler(clientSocket, connectedClients, config.getClientTimeout(), activeClientSockets));
-        adjustThreadPool();
-      } catch (java.util.concurrent.RejectedExecutionException ex) {
-        Logger.getLogger(Server.class.getName()).log(
-            Level.WARNING,
-            "Rejected connection from {0}: server is busy (queue full)",
-            clientSocket.getRemoteSocketAddress());
-        try (BufferedWriter out = new BufferedWriter(
-            new OutputStreamWriter(clientSocket.getOutputStream()))) {
-          out.write("Server busy. Try again later.");
-          out.newLine();
-          out.flush();
-        } catch (IOException ignored) {
-        }
-        clientSocket.close();
-        connectedClients.decrementAndGet();
-        activeClientSockets.remove(clientSocket);
-      }
+
+      handleIncomingClient(clientSocket);
+
     } catch (SocketException se) {
       if (running) {
         logger.log(
@@ -310,8 +291,49 @@ public class Server {
             "SocketException in accept(): {0}",
             se.getMessage());
       }
+
     } catch (IOException e) {
       logger.log(Level.SEVERE, "I/O error while accepting connection", e);
+    }
+  }
+
+  /**
+   * Notifies the client it has been added to the Queue.
+   */
+  private void sendQueueNotification(Socket clientSocket) {
+    try {
+      BufferedWriter out = new BufferedWriter(
+          new OutputStreamWriter(clientSocket.getOutputStream()));
+      out.write("You are in the queue, please wait...");
+      out.newLine();
+      out.flush();
+    } catch (IOException e) {
+      logger.log(Level.WARNING, "Failed to notify client of queue status", e);
+    }
+  }
+
+  /**
+   * Submits client to thread pool.
+   * Disconnects client if no threads are available.
+   */
+  private void handleIncomingClient(Socket clientSocket) {
+    try {
+      executor
+          .execute(new ClientHandler(clientSocket, connectedClients, config.getClientTimeout(), activeClientSockets));
+      adjustThreadPool();
+    } catch (java.util.concurrent.RejectedExecutionException ex) {
+      Logger.getLogger(Server.class.getName()).log(
+          Level.WARNING,
+          "Rejected connection from {0}: server is busy (queue full)",
+          clientSocket.getRemoteSocketAddress());
+      sendServerBusyNotification(clientSocket);
+      try {
+        clientSocket.close();
+      } catch (IOException e) {
+        logger.log(Level.WARNING, "Failed to close client socket after rejection", e);
+      }
+      connectedClients.decrementAndGet();
+      activeClientSockets.remove(clientSocket);
     }
   }
 
@@ -326,6 +348,21 @@ public class Server {
     if (desiredCore > executor.getCorePoolSize()) {
       executor.setCorePoolSize(desiredCore);
       executor.prestartAllCoreThreads();
+    }
+  }
+
+  /**
+   * Sends a notification if the server is busy and can't handle any more
+   * connections.
+   */
+  private void sendServerBusyNotification(Socket clientSocket) {
+    try (BufferedWriter out = new BufferedWriter(
+        new OutputStreamWriter(clientSocket.getOutputStream()))) {
+      out.write("Server busy. Try again later.");
+      out.newLine();
+      out.flush();
+    } catch (IOException ignored) {
+      // Intentionally ignored: client gets disconnected.
     }
   }
 
