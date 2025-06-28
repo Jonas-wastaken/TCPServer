@@ -1,9 +1,10 @@
 """
-TCP Client Module
+client.py
 
 This module provides a Client class for establishing a TCP connection to a server,
 sending periodic 'ping' messages, receiving responses, and handling connection errors.
-It also defines custom exceptions for connection (ConnError), transmission (TXError), and reception (RXError) errors.
+It also defines custom exceptions for connection (ConnError), transmission (TXError),
+and reception (RXError) errors.
 
 Example usage:
     python3 client.py -r -1
