@@ -71,4 +71,6 @@ Each module has its own README with detailed usage instructions.
 
 ## License
 
-tbd
+This project is licensed under the GNU General Public License v3.0 (GPLv3).
+
+See the [LICENSE](https://www.gnu.org/licenses/gpl-3.0.txt) file for details.
