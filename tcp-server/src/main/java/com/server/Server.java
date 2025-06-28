@@ -299,6 +299,8 @@ public class Server {
 
   /**
    * Notifies the client it has been added to the Queue.
+   * 
+   * @param clientSocket the client socket
    */
   private void sendQueueNotification(Socket clientSocket) {
     try {
@@ -315,6 +317,8 @@ public class Server {
   /**
    * Submits client to thread pool.
    * Disconnects client if no threads are available.
+   * 
+   * @param clientSocket the client socket
    */
   private void handleIncomingClient(Socket clientSocket) {
     try {
@@ -354,6 +358,8 @@ public class Server {
   /**
    * Sends a notification if the server is busy and can't handle any more
    * connections.
+   * 
+   * @param clientSocket the client socket
    */
   private void sendServerBusyNotification(Socket clientSocket) {
     try (BufferedWriter out = new BufferedWriter(
