@@ -3,6 +3,6 @@
     "monitoring_port": 8081,
     "buffer_size": 1,
     "max_pool_size": 3,
-    "client_timeout": 5,
+    "client_timeout": 5000,
     "queue_size": 1
 }
