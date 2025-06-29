@@ -57,7 +57,7 @@ class TCPClient:
 
     def __init__(self, run_time: int | None = None):
         """
-        Initialize a new Client, connect to the server, send periodic pings, and disconnect.
+        Initialize a new Client.
 
         Args:
             run_time (int | None, optional): Runtime of the client (seconds).
@@ -68,10 +68,10 @@ class TCPClient:
         self.__in_file = TextIO()
         self.__out_file = TextIO()
 
+    def main(self) -> None:
+        """Connects to the server, sends periodic pings, and gracefully disconnects."""
         self.__connect()
-
         self.__ping()
-
         self.__disconnect()
 
     def __connect(self) -> None:
@@ -268,4 +268,5 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     runtime = args.runtime if args.runtime > 0 else None
-    TCPClient(run_time=runtime)
+    tcp_client = TCPClient(run_time=runtime)
+    tcp_client.main()
