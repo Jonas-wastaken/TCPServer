@@ -160,7 +160,6 @@ public class Server {
               Level.INFO,
               "\"shutdown\" command received. Initiating graceful shutdown...");
           running = false;
-          shrinker.interrupt();
           closeServerSocket();
           sendShutdownWarningToClients();
           new Thread(this::scheduleForceDisconnect, "ForceDisconnectThread").start();
