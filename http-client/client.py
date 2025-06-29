@@ -25,9 +25,8 @@ class HTTPClient:
     HTTPClient is responsible for communicating with a monitoring server via HTTP.
 
     This class initializes a connection to a predefined monitoring endpoint,
-    retrieves JSON-formatted monitoring data, and provides access to this data
-    through a property. The server host and port can be configured via the
-    SERVER_HOST and MONITORING_PORT environment variables, respectively.
+    retrieves JSON-formatted monitoring data, and provides access to this data.
+    The host and port can be configured via the SERVER_HOST and MONITORING_PORT env variables.
 
     Attributes:
         HOST (str): The hostname of the monitoring server.
@@ -35,7 +34,8 @@ class HTTPClient:
         PATH (str): The endpoint path for monitoring data.
 
     Methods:
-        get_data (property): Returns the latest monitoring data as a dictionary.
+        get_data: Returns the latest monitoring data as a dictionary.
+        main: Retrieves and prints data from the server every 5 seconds indefinitely.
     """
 
     HOST = os.getenv("SERVER_HOST", "localhost")
@@ -45,33 +45,36 @@ class HTTPClient:
     def __init__(self) -> None:
         """
         Initializes the HTTPClient instance.
-        Sends GET request to the monitoring endpoint.
-        Fetches and stores the JSON response data for later access.
         """
-        r = requests.get(
-            url=f"http://{HTTPClient.HOST}:{HTTPClient.PORT}/{HTTPClient.PATH}",
-            timeout=10,
-        )
 
-        self.__data = r.json()
-
-    @property
-    def get_data(self) -> Dict[str, int]:
-        """_summary_
+    def get_data(self) -> Dict[str, int] | None:
+        """Sends GET request to the monitoring endpoint.
 
         Returns:
-            Dict[str, int]: _description_
+            Dict[str, int] | None: Response from the monitoring endpoint. None on Exception.
         """
-        return self.__data
+        try:
+            r = requests.get(
+                url=f"http://{HTTPClient.HOST}:{HTTPClient.PORT}/{HTTPClient.PATH}",
+                timeout=5,
+            )
+
+            return r.json()
+
+        except requests.RequestException as e:
+            print(e)
+
+            return None
+
+    def main(self) -> None:
+        """Retrieves and prints data from the server every 5 seconds indefinitely."""
+        while True:
+            print(
+                f"{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}: {self.get_data()}"
+            )
+            time.sleep(5)
 
 
 if __name__ == "__main__":
-    while True:
-        try:
-            monitoring_data = HTTPClient().get_data
-            print(
-                f"{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}: {monitoring_data}"
-            )
-        except Exception as e:
-            print(e)
-        time.sleep(10)
+    http_client = HTTPClient()
+    http_client.main()
