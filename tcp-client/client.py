@@ -40,6 +40,8 @@ class TCPClient:
         __out_file (TextIO): File-like object for writing to the server.
 
     ## Methods:
+        **main()**
+        Connects to the server, sends periodic pings, and gracefully disconnects. <br>
         **__connect()**
         Establishes a TCP connection and prepares file-like objects. <br>
         **__get_response()**
